@@ -1,0 +1,76 @@
+{
+  "_description": "各引擎的配额/成本/限频配置。用于智能编排调度。",
+  "anysearch": {
+    "label": "AnySearch",
+    "qps": 5,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "priority": 1
+  },
+  "byted": {
+    "label": "字节搜索",
+    "qps": 5,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "priority": 2
+  },
+  "eastmoney": {
+    "label": "东财金融",
+    "qps": 1,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "priority": 3
+  },
+  "zhihu": {
+    "label": "知乎",
+    "qps": 0.017,
+    "limit": 1000,
+    "period": "day",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "priority": 4
+  },
+  "tavily": {
+    "label": "Tavily",
+    "qps": 1.67,
+    "limit": 1000,
+    "period": "month",
+    "cost_per_call": 0.001,
+    "cost_unit": "credit",
+    "credits_per_search": 1,
+    "priority": 5
+  },
+  "wigolo": {
+    "label": "Wigolo本地搜索",
+    "qps": 10,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "priority": 6
+  },
+  "arxiv": {
+    "label": "arXiv学术论文",
+    "qps": 1,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "priority": 7
+  },
+  "felo": {
+    "label": "Felo AI搜索",
+    "qps": 1,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "credit",
+    "priority": 8
+  }
+}

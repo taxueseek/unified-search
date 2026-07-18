@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "name": "local-search",
+  "description": "轻量级本地搜索引擎",
+  "engines": {
+    "general": {
+      "primary": "duckduckgo",
+      "fallback": ["bing", "wikipedia"],
+      "max_parallel": 2,
+      "timeout": 3000
+    },
+    "chinese": {
+      "primary": "bing",
+      "fallback": ["duckduckgo"],
+      "max_parallel": 2,
+      "timeout": 3000
+    },
+    "academic": {
+      "primary": "arxiv",
+      "fallback": ["semantic_scholar"],
+      "max_parallel": 2,
+      "timeout": 5000
+    },
+    "news": {
+      "primary": "bing_news",
+      "fallback": ["duckduckgo"],
+      "max_parallel": 1,
+      "timeout": 3000
+    },
+    "code": {
+      "primary": "github",
+      "fallback": ["stackoverflow", "mdn"],
+      "max_parallel": 2,
+      "timeout": 3000
+    }
+  },
+  "cache": {
+    "enabled": true,
+    "max_size": 1000,
+    "ttl": 3600,
+    "path": "~/.local-search/cache.db"
+  },
+  "reranking": {
+    "enabled": true,
+    "model": "ms-marco-MiniLM-L-6-v2",
+    "top_k": 5
+  }
+}

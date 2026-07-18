@@ -1,0 +1,505 @@
+# Unified Search — 三层引擎注册表
+# =============================================================================
+# 合并 T1（直连 API）、T2（local-search 本地引擎）
+# 智能降级链：T1 API → T2 local-search → 缓存 → 报错
+# 无外部依赖：SearXNG/wigolo 已完全移除
+# =============================================================================
+# 状态说明:
+#   ok         — 可用，正常响应
+#   slow       — 可用但延迟较高
+#   degraded   — 部分可用/偶发失败
+#   unavailable — 不可用（CAPTCHA/地区限制/API 禁用）
+#   disabled   — 已主动禁用
+# =============================================================================
+# 成本说明:
+#   free       — 零成本
+#   token      — 消耗 token（但不消耗额外 API 配额）
+#   api        — 消耗 API 配额（有速率限制或付费）
+# =============================================================================
+
+version: 2
+last_updated: "2026-07-18"
+
+engines:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # T1 — 直连 API（首选层）
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  - name: anysearch
+    tier: T1
+    type: cli
+    coverage: [general, tech]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "通用搜索主力，本地 CLI，零 token"
+
+  - name: zhihu
+    tier: T1
+    type: http
+    coverage: [chinese, review, opinion]
+    latency_ms: 1500
+    cost: api
+    status: ok
+    desc: "知乎搜索，中文观点/评测"
+
+  - name: zhihu_search
+    tier: T1
+    type: http
+    coverage: [chinese, review, opinion]
+    latency_ms: 1500
+    cost: api
+    status: ok
+    desc: "知乎搜索（备选端点）"
+
+  - name: eastmoney
+    tier: T1
+    type: cli
+    coverage: [finance, stock, fund]
+    latency_ms: 1200
+    cost: free
+    status: ok
+    recommended: true
+    desc: "东方财富，金融数据首选"
+
+  - name: byted
+    tier: T1
+    type: http
+    coverage: [general, news, chinese]
+    latency_ms: 1500
+    cost: api
+    status: ok
+    desc: "字节搜索 API，中文通用/news"
+
+  - name: tavily
+    tier: T1
+    type: http
+    coverage: [general]
+    latency_ms: 3000
+    cost: api
+    status: ok
+    desc: "Tavily AI 搜索 API"
+
+  - name: github
+    tier: T1
+    type: http
+    coverage: [code]
+    latency_ms: 2000
+    cost: api
+    status: ok
+    desc: "GitHub 代码搜索 API"
+
+  - name: arxiv
+    tier: T1
+    type: http
+    coverage: [academic]
+    latency_ms: 3500
+    cost: free
+    status: ok
+    desc: "arXiv 论文搜索"
+
+  - name: semantic_scholar
+    tier: T1
+    type: http
+    coverage: [academic]
+    latency_ms: 3000
+    cost: free
+    status: disabled
+    desc: "Semantic Scholar API（备选）"
+
+  - name: openalex
+    tier: T1
+    type: http
+    coverage: [academic]
+    latency_ms: 4000
+    cost: free
+    status: disabled
+    desc: "OpenAlex 开放学术 API"
+
+  - name: crossref
+    tier: T1
+    type: http
+    coverage: [academic]
+    latency_ms: 3000
+    cost: free
+    status: disabled
+    desc: "Crossref DOI 元数据 API"
+
+  - name: bocha
+    tier: T1
+    type: http
+    coverage: [chinese, general]
+    latency_ms: 1500
+    cost: api
+    status: disabled
+    desc: "博查搜索 API（中文）"
+
+  - name: brave
+    tier: T1
+    type: http
+    coverage: [general]
+    latency_ms: 1500
+    cost: api
+    status: disabled
+    desc: "Brave Search API"
+
+  - name: metaso
+    tier: T1
+    type: http
+    coverage: [chinese, general]
+    latency_ms: 3000
+    cost: api
+    status: disabled
+    desc: "秘塔搜索 API（中文 AI 搜索）"
+
+  - name: felo
+    tier: T1
+    type: http
+    coverage: [general, tech]
+    latency_ms: 4000
+    cost: api
+    status: disabled
+    desc: "Felo AI 搜索 API"
+
+  - name: uapi
+    tier: T1
+    type: http
+    coverage: [general]
+    latency_ms: 2000
+    cost: api
+    status: disabled
+    desc: "UAPI 聚合搜索"
+
+  - name: duckduckgo
+    tier: T1
+    type: http
+    coverage: [general]
+    latency_ms: 1500
+    cost: free
+    status: disabled
+    desc: "DuckDuckGo Instant Answer API（T2 替代）"
+
+  - name: wolframalpha
+    tier: T1
+    type: http
+    coverage: [factual, math]
+    latency_ms: 2000
+    cost: api
+    status: disabled
+    desc: "WolframAlpha 计算知识引擎"
+
+  - name: wikipedia
+    tier: T1
+    type: http
+    coverage: [wiki, factual]
+    latency_ms: 1000
+    cost: free
+    status: disabled
+    desc: "Wikipedia API（T2 替代）"
+
+  - name: searxng
+    tier: T1
+    type: http
+    coverage: [general]
+    latency_ms: 5000
+    cost: free
+    status: disabled
+    desc: "SearXNG 直连（已废弃，由 T3 替代）"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # T2 — local-search 本地引擎（通用搜索主力）
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  - name: local/bing
+    tier: T2
+    type: t2_local
+    coverage: [general]
+    latency_ms: 610
+    cost: free
+    status: ok
+    recommended: true
+    desc: "Bing 网页搜索 — 最佳通用搜索（实测 0.61s）"
+
+  - name: local/sogou
+    tier: T2
+    type: t2_local
+    coverage: [chinese]
+    latency_ms: 910
+    cost: free
+    status: ok
+    recommended: true
+    note: "替代 Baidu — Baidu 遭 CAPTCHA 拦截 10.68s"
+    desc: "搜狗搜索 — 最佳中文搜索（实测 0.91s）"
+
+  - name: local/duckduckgo
+    tier: T2
+    type: t2_local
+    coverage: [general]
+    latency_ms: 1013
+    cost: free
+    status: ok
+    desc: "DuckDuckGo 搜索"
+
+  - name: local/google
+    tier: T2
+    type: t2_local
+    coverage: [general]
+    latency_ms: 4476
+    cost: free
+    status: slow
+    note: "中国可能不可达，仅作后备"
+    desc: "Google 搜索（中国受限）"
+
+  - name: local/mojeek
+    tier: T2
+    type: t2_local
+    coverage: [general]
+    latency_ms: 2121
+    cost: free
+    status: ok
+    desc: "Mojeek 独立搜索引擎"
+
+  - name: local/yandex
+    tier: T2
+    type: t2_local
+    coverage: [general]
+    latency_ms: 3071
+    cost: free
+    status: ok
+    desc: "Yandex 搜索"
+
+  - name: local/startpage
+    tier: T2
+    type: t2_local
+    coverage: [general]
+    latency_ms: 3515
+    cost: free
+    status: ok
+    desc: "Startpage 隐私搜索"
+
+  - name: local/baidu
+    tier: T2
+    type: t2_local
+    coverage: [chinese]
+    latency_ms: 10680
+    cost: free
+    status: degraded
+    note: "CAPTCHA 拦截严重，已由 local/sogou 替代"
+    desc: "百度搜索（已降级）"
+
+  - name: local/wikipedia
+    tier: T2
+    type: t2_local
+    coverage: [wiki, factual]
+    latency_ms: 747
+    cost: free
+    status: ok
+    desc: "Wikipedia 百科搜索"
+
+  - name: local/wiktionary
+    tier: T2
+    type: t2_local
+    coverage: [wiki]
+    latency_ms: 1070
+    cost: free
+    status: ok
+    desc: "Wiktionary 词典"
+
+  - name: local/wikiquote
+    tier: T2
+    type: t2_local
+    coverage: [wiki]
+    latency_ms: 2231
+    cost: free
+    status: ok
+    desc: "Wikiquote 语录"
+
+  - name: local/arxiv
+    tier: T2
+    type: t2_local
+    coverage: [academic]
+    latency_ms: 3403
+    cost: free
+    status: ok
+    desc: "arXiv 论文搜索（本地直连）"
+
+  - name: local/pubmed
+    tier: T2
+    type: t2_local
+    coverage: [academic, medical]
+    latency_ms: 1516
+    cost: free
+    status: ok
+    desc: "PubMed 生物医学文献"
+
+  - name: local/crossref
+    tier: T2
+    type: t2_local
+    coverage: [academic]
+    latency_ms: 2094
+    cost: free
+    status: ok
+    desc: "Crossref 学术 DOI 搜索"
+
+  - name: local/bing_news
+    tier: T2
+    type: t2_local
+    coverage: [news]
+    latency_ms: 782
+    cost: free
+    status: ok
+    desc: "Bing 新闻搜索"
+
+  - name: local/google_news
+    tier: T2
+    type: t2_local
+    coverage: [news]
+    latency_ms: 4006
+    cost: free
+    status: ok
+    desc: "Google News RSS"
+
+  - name: local/duckduckgo_news
+    tier: T2
+    type: t2_local
+    coverage: [news]
+    latency_ms: 3392
+    cost: free
+    status: ok
+    desc: "DuckDuckGo 新闻"
+
+  - name: local/github
+    tier: T2
+    type: t2_local
+    coverage: [code]
+    latency_ms: 1414
+    cost: free
+    status: ok
+    desc: "GitHub 仓库搜索"
+
+  - name: local/stackoverflow
+    tier: T2
+    type: t2_local
+    coverage: [code]
+    latency_ms: 1981
+    cost: free
+    status: ok
+    desc: "Stack Overflow 搜索"
+
+  - name: local/gitlab
+    tier: T2
+    type: t2_local
+    coverage: [code]
+    latency_ms: 1947
+    cost: free
+    status: ok
+    desc: "GitLab 项目搜索"
+
+  - name: local/npm
+    tier: T2
+    type: t2_local
+    coverage: [code]
+    latency_ms: 2389
+    cost: free
+    status: ok
+    desc: "npm 包搜索"
+
+  - name: local/imdb
+    tier: T2
+    type: t2_local
+    coverage: [vertical]
+    latency_ms: 2637
+    cost: free
+    status: ok
+    desc: "IMDb 电影搜索"
+
+  - name: local/goodreads
+    tier: T2
+    type: t2_local
+    coverage: [vertical]
+    latency_ms: 489
+    cost: free
+    status: ok
+    desc: "Goodreads 图书搜索"
+
+  - name: local/openalex
+    tier: T2
+    type: t2_local
+    coverage: [academic]
+    latency_ms: 0
+    cost: free
+    status: unknown
+    desc: "OpenAlex 全学科学术搜索（2.5亿+论文）"
+
+  - name: local/dblp
+    tier: T2
+    type: t2_local
+    coverage: [academic]
+    latency_ms: 0
+    cost: free
+    status: unknown
+    desc: "DBLP 计算机科学文献库"
+
+  - name: local/docker_hub
+    tier: T2
+    type: t2_local
+    coverage: [code]
+    latency_ms: 0
+    cost: free
+    status: unknown
+    desc: "Docker Hub 镜像搜索"
+
+  - name: local/pypi
+    tier: T2
+    type: t2_local
+    coverage: [code]
+    latency_ms: 0
+    cost: free
+    status: unknown
+    desc: "PyPI Python 包搜索"
+
+  - name: local/arch_wiki
+    tier: T2
+    type: t2_local
+    coverage: [code]
+    latency_ms: 0
+    cost: free
+    status: unknown
+    desc: "Arch Linux Wiki 搜索"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 推荐引擎方案（按场景）
+# ═══════════════════════════════════════════════════════════════════════════
+
+recommendations:
+  general:
+    primary: [anysearch, tavily]
+    t2_fallback: [local/bing, local/duckduckgo, local/wikipedia]
+    desc: "通用搜索优先 T1 API，T2 本地引擎作为后备"
+
+  chinese:
+    primary: [zhihu, eastmoney, byted]
+    t2_fallback: [local/sogou, local/bing]
+    note: "local/sogou 替代 local/baidu（Baidu CAPTCHA 拦截 10.68s）"
+    desc: "中文搜索推荐 Sogou 而非 Baidu"
+
+  academic:
+    primary: [arxiv, semantic_scholar]
+    t2_fallback: [local/arxiv, local/pubmed, local/crossref]
+    desc: "学术搜索三层全覆盖"
+
+  code:
+    primary: [github, anysearch]
+    t2_fallback: [local/stackoverflow, local/github, local/gitlab]
+    desc: "代码搜索三层全覆盖"
+
+  news:
+    primary: [byted]
+    t2_fallback: [local/bing_news, local/google_news]
+    desc: "新闻搜索双层覆盖"
+
+  finance:
+    primary: [eastmoney, byted]
+    t2_fallback: [local/bing]
+    desc: "金融数据以东方财富为主"

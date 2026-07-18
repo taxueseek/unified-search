@@ -1,0 +1,231 @@
+{
+  "_description": "每个引擎的领域代表性文档。用于 TF-IDF 语义路由。",
+  "_update": "新增引擎时在此添加条目，不需要改代码。",
+  "eastmoney": {
+    "label": "东财金融",
+    "documents": [
+      "股票行情 股价涨跌 大盘走势 上证指数 深证成指",
+      "基金净值 基金筛选 基金经理 基金持仓 基金分红",
+      "财报分析 营收 净利润 PE PB ROE 市净率 市盈率",
+      "研报 评级 目标价 行业分析 公司研究",
+      "IPO 打新 中签 可转债 定增 配股",
+      "北向资金 主力资金 龙虎榜 融资融券",
+      "黄金 原油 期货 债券 利率 汇率",
+      "新能源 半导体 AI芯片 光伏 锂电 行业板块",
+      "英伟达 苹果 特斯拉 微软 谷歌 科技股",
+      "比特币 区块链 加密货币",
+      "宏观经济 CPI PPI GDP PMI 央行 货币政策",
+      "银行 券商 保险 信托 公募 私募 量化对冲",
+      "港股 美股 中概股 AH溢价 南下资金"
+    ],
+    "boost_keywords": {
+      "股票": 2.0, "基金": 2.0, "财报": 2.0, "行情": 2.0,
+      "研报": 2.0, "净值": 2.0, "PE": 2.0, "ROE": 2.0,
+      "IPO": 2.0, "黄金": 1.5, "期货": 1.5, "利率": 1.5,
+      "马斯克": 1.0, "英伟达": 1.1, "特斯拉": 1.1, "苹果": 1.1,
+      "比特币": 1.5, "半导体": 1.5, "新能源": 1.5
+    },
+    "boost_combos": {
+      "英伟达 财报": 0.5, "英伟达 股票": 0.5,
+      "特斯拉 股价": 0.5, "特斯拉 销量": 0.3,
+      "马斯克 特斯拉": 0.3,
+      "基金 净值": 0.5, "基金 定投": 0.5,
+      "黄金 价格": 0.3, "原油 价格": 0.3
+    }
+  },
+  "zhihu": {
+    "label": "知乎",
+    "documents": [
+      "技术方案 编程 算法 架构 系统设计 代码实现",
+      "职场 求职 面试 简历 职业发展 跳槽 薪资",
+      "生活经验 美食 旅行 健身 健康 育儿 教育",
+      "电影 书籍 音乐 艺术 文化 评论 推荐",
+      "社会热点 观点 讨论 分析 思考 价值观",
+      "创业 商业模式 运营 增长 营销 产品",
+      "学术 论文 研究 科学 物理 数学 哲学",
+      "数码 手机 电脑 硬件 软件 测评",
+      "情感 心理 人际关系 沟通 恋爱 婚姻",
+      "摄影 设计 绘画 创作 技巧 教程"
+    ],
+    "boost_keywords": {
+      "技术": 1.5, "编程": 1.5, "职场": 1.5, "面试": 1.5,
+      "电影": 1.5, "书籍": 1.5, "推荐": 1.3, "评价": 1.3,
+      "创业": 1.5, "学术": 1.5, "论文": 1.5, "思考": 1.3,
+      "怎么": 1.2, "如何": 1.2, "为什么": 1.2, "哪款": 1.3
+    }
+  },
+  "tavily": {
+    "label": "Tavily",
+    "documents": [
+      "latest news breaking developments international global",
+      "research paper study analysis academic science technology",
+      "market trends industry report forecast investment",
+      "company profile product launch funding acquisition",
+      "geopolitics policy regulation government international relations",
+      "AI artificial intelligence machine learning LLM model",
+      "cryptocurrency blockchain Web3 DeFi token",
+      "climate environment sustainability energy transition",
+      "health medicine biotech pharma clinical trial",
+      "startup innovation venture capital silicon valley"
+    ],
+    "boost_keywords": {
+      "latest": 1.5, "news": 1.5, "research": 2.0, "analysis": 1.5,
+      "trend": 1.5, "report": 1.5, "international": 1.5, "global": 1.5,
+      "AI": 1.5, "artificial intelligence": 2.0, "machine learning": 2.0,
+      "cryptocurrency": 1.5, "blockchain": 1.5, "startup": 1.5,
+      "paper": 1.5, "study": 1.5, "science": 1.5
+    }
+  },
+  "anysearch": {
+    "label": "AnySearch",
+    "documents": [
+      "通用搜索 网页搜索 信息查询 知识百科",
+      "技术文档 API 教程 开发指南 错误排查",
+      "产品评测 对比分析 使用体验 购买建议",
+      "新闻资讯 行业动态 事件报道",
+      "学术资源 论文检索 文献综述",
+      "开源项目 GitHub 代码仓库 技术栈"
+    ],
+    "boost_keywords": {
+      "搜索": 1.3, "查询": 1.3, "教程": 1.3, "文档": 1.3,
+      "API": 1.5, "GitHub": 1.5, "开源": 1.5,
+      "评测": 1.3, "对比": 1.3, "推荐": 1.2
+    }
+  },
+  "wigolo": {
+    "label": "Wigolo本地搜索",
+    "documents": [
+      "local search semantic retrieval knowledge base",
+      "cached results ML reranked hybrid discovery",
+      "English technical documentation library framework",
+      "research papers academic deep dive analysis",
+      "code documentation API reference implementation"
+    ],
+    "boost_keywords": {
+      "local": 1.5, "cached": 1.5, "semantic": 1.5,
+      "documentation": 1.5, "reference": 1.5, "implementation": 1.5
+    }
+  },
+  "byted": {
+    "label": "字节搜索",
+    "documents": [
+      "新闻 热点 时事 国内 社会 民生",
+      "科技 互联网 数码 手机 电脑 测评",
+      "娱乐 明星 综艺 影视 音乐 八卦",
+      "体育 足球 篮球 奥运 赛事 比分",
+      "教育 考试 学校 培训 课程 学习",
+      "旅游 景点 攻略 酒店 出行 签证",
+      "美食 餐厅 菜谱 烹饪 饮食 健康",
+      "房产 房价 买房 卖房 装修 物业",
+      "汽车 车型 评测 驾驶 保养 新能源车",
+      "游戏 手游 网游 攻略 评测 电竞"
+    ],
+    "boost_keywords": {
+      "新闻": 1.5, "热点": 1.5, "时事": 1.5, "动态": 1.3,
+      "测评": 1.5, "推荐": 1.3, "最新": 1.3,
+      "攻略": 1.5, "怎么": 1.2, "排行": 1.3,
+      "价格": 1.3, "多少钱": 1.3, "好不好": 1.3,
+      "马斯克": 1.2, "推特": 1.3, "微博": 1.3
+    },
+    "boost_combos": {
+      "马斯克 推特": 0.5, "马斯克 微博": 0.5,
+      "明星 八卦": 0.3, "娱乐 新闻": 0.3
+    }
+  },
+  "arxiv": {
+    "label": "arXiv学术论文",
+    "documents": [
+      "academic paper research study experiment",
+      "machine learning deep learning neural network",
+      "natural language processing computer vision",
+      "reinforcement learning generative model diffusion",
+      "transformer attention mechanism self-attention",
+      "large language model foundation model pre-training",
+      "object detection semantic segmentation image recognition",
+      "optimization gradient descent loss function convergence",
+      "论文 学术 研究 实验 证明 定理",
+      "机器学习 深度学习 神经网络 模型 训练",
+      "自然语言处理 计算机视觉 图像识别 语义分割",
+      "强化学习 生成模型 扩散模型 注意力机制"
+    ],
+    "boost_keywords": {
+      "paper": 2.0, "arXiv": 2.0, "preprint": 2.0,
+      "DOI": 2.0, "citation": 1.5, "abstract": 1.5,
+      "论文": 2.0, "学术": 1.5, "arxiv": 2.0,
+      "transformer": 1.5, "attention": 1.5, "BERT": 1.5, "GPT": 1.5
+    }
+  },
+  "duckduckgo": {
+    "label": "DuckDuckGo",
+    "documents": [
+      "quick answer fact check definition explanation",
+      "what is how to why when where who",
+      "weather time zone population distance conversion",
+      "dictionary thesaurus pronunciation meaning",
+      "是什么 怎么 为什么 哪里 谁 多少",
+      "天气 时区 人口 距离 换算 计算",
+      "定义 解释 含义 概念 术语"
+    ],
+    "boost_keywords": {
+      "what": 2.0, "how": 2.0, "why": 2.0, "when": 2.0, "where": 2.0, "who": 2.0,
+      "is": 1.5, "does": 1.5, "do": 1.5,
+      "是什么": 2.0, "怎么": 2.0, "为什么": 2.0, "哪里": 2.0, "谁": 2.0,
+      "天气": 1.5, "时间": 1.5, "定义": 1.5, "含义": 1.5
+    }
+  },
+  "uapi": {
+    "label": "UAPI中文搜索",
+    "documents": [
+      "中文搜索 网页搜索 信息查询 知识百科",
+      "新闻资讯 行业动态 事件报道",
+      "产品评测 使用体验 购买建议",
+      "技术文档 教程 指南 帮助",
+      "生活服务 旅游 美食 健康 教育",
+      "购物推荐 比价 优惠 折扣"
+    ],
+    "boost_keywords": {
+      "搜索": 1.5, "查询": 1.5, "新闻": 1.5, "资讯": 1.5,
+      "评测": 1.5, "推荐": 1.3, "教程": 1.3,
+      "中文": 1.5, "国内": 1.5
+    }
+  },
+  "semantic_scholar": {
+    "label": "Semantic Scholar学术",
+    "documents": [
+      "academic paper research citation impact factor",
+      "machine learning deep learning neural network",
+      "natural language processing computer vision",
+      "scientific study experiment methodology",
+      "journal conference proceedings peer review",
+      "author affiliation institution university",
+      "论文 引用 影响因子 学术 研究",
+      "机器学习 深度学习 神经网络 模型",
+      "期刊 会议 评审 作者 机构 大学"
+    ],
+    "boost_keywords": {
+      "paper": 2.0, "research": 2.0, "citation": 2.0,
+      "study": 1.5, "experiment": 1.5, "methodology": 1.5,
+      "论文": 2.0, "引用": 2.0, "学术": 1.5, "研究": 1.5,
+      "survey": 1.5, "review": 1.5
+    }
+  },
+  "felo": {
+    "label": "Felo AI搜索",
+    "documents": [
+      "AI answer synthesized search comprehensive overview",
+      "what is how does explain concept definition tutorial",
+      "technology framework library documentation deep dive",
+      "research synthesis multi source analysis summary",
+      "product comparison feature overview best practices",
+      "AI 综合回答 概念解释 技术原理 深度研究",
+      "是什么 怎么做 如何理解 教程 概述 综述",
+      "技术文档 框架 库 最佳实践 对比分析"
+    ],
+    "boost_keywords": {
+      "what is": 1.5, "explain": 1.5, "overview": 1.5, "summary": 1.5,
+      "tutorial": 1.3, "how does": 1.5, "deep dive": 1.5,
+      "是什么": 1.5, "怎么": 1.3, "如何": 1.3, "解释": 1.5,
+      "概述": 1.5, "综述": 1.5, "原理": 1.5, "教程": 1.3
+    }
+  }
+}
