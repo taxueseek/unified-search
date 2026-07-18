@@ -517,7 +517,12 @@ def main():
   python3 search.py "python async" -e wigolo -n 10 --depth deep
   python3 search.py "python async" --explain --json
   python3 search.py "python async" --no-cache -t 15
-  python3 search.py --list-engines
+
+发现命令：
+  python3 search.py --list-engines           # 列出所有引擎详情
+  python3 search.py --find-engines "学术论文"  # 语义匹配引擎
+  python3 search.py --describe-engine arxiv  # 查看引擎详情
+  python3 search.py --status                 # 健康检查
         """,
     )
     parser.add_argument("query", nargs="*", help="搜索关键词")
@@ -564,6 +569,21 @@ def main():
         help="列出可用引擎并退出",
     )
     parser.add_argument(
+        "--find-engines",
+        metavar="QUERY",
+        help="根据查询语义匹配可用引擎",
+    )
+    parser.add_argument(
+        "--describe-engine",
+        metavar="ENGINE",
+        help="查看单个引擎详情",
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="健康检查 + 可用性诊断",
+    )
+    parser.add_argument(
         "--progress",
         action="store_true",
         help="打印进度阶段到 stderr（调试用）",
@@ -577,8 +597,25 @@ def main():
 
     args = parser.parse_args()
 
+    # ── 发现命令 ──────────────────────────────────────────────────────────────
     if args.list_engines:
-        print(json.dumps(available_engines(), ensure_ascii=False, indent=2))
+        from engines import list_engines_detailed
+        print(json.dumps(list_engines_detailed(), ensure_ascii=False, indent=2))
+        return
+
+    if args.find_engines:
+        from engines import find_engines
+        print(json.dumps(find_engines(args.find_engines), ensure_ascii=False, indent=2))
+        return
+
+    if args.describe_engine:
+        from engines import describe_engine
+        print(json.dumps(describe_engine(args.describe_engine), ensure_ascii=False, indent=2))
+        return
+
+    if args.status:
+        from engines import engine_status
+        print(json.dumps(engine_status(), ensure_ascii=False, indent=2))
         return
 
     if not args.query:

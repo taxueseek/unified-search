@@ -1389,6 +1389,211 @@ def available_engines() -> list[str]:
     return sorted(get_registry().keys())
 
 
+def list_engines_detailed() -> list[dict[str, Any]]:
+    """返回所有引擎的详细信息（状态、延迟、成本、覆盖域）。
+
+    用于 --list-engines 和 find-engines 命令。
+    """
+    try:
+        import yaml
+    except ImportError:
+        yaml = None  # type: ignore
+
+    _load_registry()  # 加载注册表到全局变量
+    config = load_config()
+    enabled_engines = set(config.get("engines", {}).keys())
+
+    # 从 engine_registry.yaml 加载元数据
+    registry_meta = []
+    try:
+        rp = Path(__file__).resolve().parent.parent / "backends" / "engine_registry.yaml"
+        if rp.exists() and yaml:
+            with open(rp, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            registry_meta = data.get("engines", []) if isinstance(data, dict) else []
+    except Exception:
+        pass
+
+    registry = registry_meta
+
+    result = []
+    for eng in registry:
+        name = eng.get("name", "")
+        if not name:
+            continue
+        result.append({
+            "name": name,
+            "tier": eng.get("tier", "?"),
+            "status": eng.get("status", "unknown"),
+            "latency_ms": eng.get("latency_ms", 0),
+            "cost": eng.get("cost", "unknown"),
+            "coverage": eng.get("coverage", []),
+            "desc": eng.get("desc", ""),
+            "enabled": name in enabled_engines,
+            "recommended": eng.get("recommended", False),
+        })
+
+    # 补充 config 中有但 registry 中没有的引擎
+    registry_names = {e.get("name") for e in registry}
+    for name, spec in config.get("engines", {}).items():
+        if name not in registry_names and spec.get("enabled", True):
+            result.append({
+                "name": name,
+                "tier": "T1",
+                "status": "ok" if spec.get("enabled", True) else "disabled",
+                "latency_ms": 0,
+                "cost": "unknown",
+                "coverage": [],
+                "desc": f"{name} engine (from config)",
+                "enabled": True,
+                "recommended": False,
+            })
+
+    return result
+
+
+def find_engines(query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    """根据查询意图语义匹配可用引擎。
+
+    使用 TF-IDF 路由 + 覆盖域匹配，返回最相关的引擎列表。
+    """
+    from route import extract_features, detect_topic
+    features = extract_features(query)
+    topic = detect_topic(query, features)
+
+    engines = list_engines_detailed()
+    scored = []
+
+    for eng in engines:
+        if eng["status"] in ("disabled", "unavailable"):
+            continue
+        if not eng["enabled"]:
+            continue
+
+        score = 0.0
+        coverage = eng.get("coverage", [])
+
+        # 主题匹配加分
+        topic_coverage_map = {
+            "finance": ["finance", "stock", "fund"],
+            "news": ["news"],
+            "tech": ["tech", "code"],
+            "academic": ["academic", "medical"],
+            "general": ["general", "chinese"],
+        }
+        expected_coverage = topic_coverage_map.get(topic, ["general"])
+        overlap = len(set(coverage) & set(expected_coverage))
+        score += overlap * 0.3
+
+        # 推荐引擎加分
+        if eng.get("recommended"):
+            score += 0.2
+
+        # 低成本优先
+        if eng["cost"] == "free":
+            score += 0.1
+
+        # 低延迟优先
+        latency = eng.get("latency_ms", 5000)
+        if latency < 1000:
+            score += 0.15
+        elif latency < 2000:
+            score += 0.1
+        elif latency < 3000:
+            score += 0.05
+
+        # T2 本地引擎加分（零成本）
+        if eng["tier"] == "T2":
+            score += 0.05
+
+        scored.append({**eng, "relevance_score": round(score, 3)})
+
+    scored.sort(key=lambda x: -x["relevance_score"])
+    return scored[:top_k]
+
+
+def describe_engine(name: str) -> dict[str, Any]:
+    """查看单个引擎的详细信息（参数、示例、成本）。"""
+    engines = list_engines_detailed()
+    for eng in engines:
+        if eng["name"] == name:
+            # 补充配置信息
+            config = load_config()
+            spec = config.get("engines", {}).get(name, {})
+
+            result = {
+                **eng,
+                "type": spec.get("type", "http"),
+                "method": spec.get("method", "GET"),
+                "url": spec.get("url", ""),
+                "timeout": spec.get("timeout", 8),
+                "format": spec.get("format", ""),
+            }
+
+            # API Key 需求
+            api_key_env = spec.get("_api_key_env", "")
+            if api_key_env:
+                result["api_key_required"] = True
+                result["api_key_env"] = api_key_env
+                result["api_key_configured"] = bool(_get_api_key(api_key_env))
+            else:
+                result["api_key_required"] = False
+
+            # 使用示例
+            result["examples"] = [
+                f'python3 scripts/search.py "查询词" --engine {name}',
+                f'python3 scripts/search.py "查询词" --engine {name} --json',
+            ]
+
+            return result
+
+    return {"error": f"引擎 '{name}' 不存在", "available": [e["name"] for e in engines[:20]]}
+
+
+def engine_status() -> dict[str, Any]:
+    """健康检查 + 可用性诊断。"""
+    engines = list_engines_detailed()
+    config = load_config()
+
+    ok = [e for e in engines if e["status"] == "ok" and e["enabled"]]
+    degraded = [e for e in engines if e["status"] in ("slow", "degraded") and e["enabled"]]
+    disabled = [e for e in engines if e["status"] in ("disabled", "unavailable") or not e["enabled"]]
+
+    # 按 tier 分组
+    t1 = [e for e in ok if e["tier"] == "T1"]
+    t2 = [e for e in ok if e["tier"] == "T2"]
+
+    # 按 cost 分组
+    free = [e for e in ok if e["cost"] == "free"]
+    paid = [e for e in ok if e["cost"] not in ("free", "unknown")]
+
+    # API Key 状态
+    api_keys = {}
+    for name, spec in config.get("engines", {}).items():
+        api_key_env = spec.get("_api_key_env", "")
+        if api_key_env:
+            api_keys[name] = {
+                "env": api_key_env,
+                "configured": bool(_get_api_key(api_key_env)),
+            }
+
+    return {
+        "summary": {
+            "total": len(engines),
+            "available": len(ok),
+            "degraded": len(degraded),
+            "disabled": len(disabled),
+            "t1_api": len(t1),
+            "t2_local": len(t2),
+            "free": len(free),
+            "paid": len(paid),
+        },
+        "available_engines": [e["name"] for e in ok],
+        "api_keys": api_keys,
+        "domains": [d.get("name") for d in config.get("domains", []) if d.get("name")],
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 统一入口
 # ═══════════════════════════════════════════════════════════════════════════════
