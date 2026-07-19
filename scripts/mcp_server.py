@@ -334,7 +334,7 @@ def handle_rpc(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {
                 "name": "argo",
-                "version": "2.5.0"
+                "version": "1.0.1"
             },
             "instructions": "Argo MCP 提供 6 个工具：argo_search（47 引擎统一搜索）、argo_research（深度研究）、argo_evidence（可信度评估）、argo_clarify（意图消歧）、argo_crawl（站点爬取）、argo_extract（结构化数据提取）。底层使用 47 个搜索引擎的统一搜索基础设施，支持 TF-IDF 语义路由、RRF 多引擎融合、Bocha 语义精排、双层缓存和成本感知预算控制。"
         }
@@ -360,7 +360,14 @@ def handle_rpc(method: str, params: dict[str, Any]) -> dict[str, Any]:
 
 def run_stdio():
     """运行 MCP stdio 服务。MCP 帧协议：Content-Length: N\\r\\n\\r\\n{json}"""
-    import sys
+    import sys, os, time as _time
+    try:
+        with open(os.path.expanduser("~/.kimi/argo_diag.log"), "a") as _log:
+            _log.write(f"=== PID={os.getpid()} ENTER run_stdio {_time.strftime('%H:%M:%S')} ===\n")
+            _log.write(f"python={sys.executable} cwd={os.getcwd()}\n")
+            _log.flush()
+    except: pass
+    
     while True:
         try:
             # 读取 Content-Length 头

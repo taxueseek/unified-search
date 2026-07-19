@@ -1,7 +1,7 @@
 ---
 name: argo
 description: Argo 阿尔戈 — 6工具MCP服务：argo_search（47引擎搜索）+ argo_research（深度研究）+ argo_evidence（可信度评估）+ argo_clarify（意图消歧）+ argo_crawl（站点爬取）+ argo_extract（结构化提取）。TF-IDF路由 + 成本感知 + RRF融合 + Bocha reranker。
-version: 2.5.0
+version: 1.0.1
 triggers:
   - 搜索
   - 查一下

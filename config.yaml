@@ -551,4 +551,4 @@ output:
   format: auto
   include_routing_decision: true
   include_scores: true
-version: 2.5.0
+version: 1.0.1
