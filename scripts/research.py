@@ -30,6 +30,56 @@ sys.path.insert(0, SCRIPT_DIR)
 from search import super_search, rrf_merge, deduplicate_by_url
 
 
+# ── 交叉引用检测 ──────────────────────────────────────────────────────────────
+
+def detect_cross_references(results: list[dict[str, Any]], min_sources: int = 2,
+                            min_ngram_len: int = 3) -> list[dict[str, Any]]:
+    """检测多个来源的交叉引用（n-gram 重叠）。
+
+    如果同一 n-gram 出现在 ≥min_sources 个不同域名的结果中，
+    标记为「潜在佐证」。
+    """
+    import re
+    from urllib.parse import urlparse
+
+    # 提取所有 snippet 的 n-gram
+    ngram_sources: dict[str, set] = {}  # ngram -> set of (url, title)
+    for r in results:
+        url = r.get("url", "")
+        domain = urlparse(url).netloc.lower().strip("www.") if url else "unknown"
+        text = f"{r.get('title', '')} {r.get('snippet', '')}"
+        # 简单分词（中英文混合）
+        # 英文按空格分
+        en_tokens = re.findall(r"[a-zA-Z]+", text.lower())
+        # 中文按字符 bigram/trigram
+        cn_chars = re.findall(r"[\u4e00-\u9fff]+", text)
+        cn_tokens = []
+        for seg in cn_chars:
+            for i in range(len(seg) - min_ngram_len + 1):
+                cn_tokens.append(seg[i:i + min_ngram_len])
+
+        all_tokens = en_tokens + cn_tokens
+        for n in range(min_ngram_len, min(min_ngram_len + 1, len(all_tokens) + 1)):
+            for i in range(len(all_tokens) - n + 1):
+                ngram = " ".join(all_tokens[i:i + n])
+                if len(ngram) >= 4:  # 过滤太短的 ngram
+                    ngram_sources.setdefault(ngram, set()).add(domain)
+
+    # 找出被多个来源佐证的 n-gram
+    cross_refs = []
+    for ngram, domains in ngram_sources.items():
+        if len(domains) >= min_sources:
+            cross_refs.append({
+                "ngram": ngram,
+                "source_count": len(domains),
+                "domains": sorted(domains),
+            })
+
+    # 按来源数排序，取 top 10
+    cross_refs.sort(key=lambda x: x["source_count"], reverse=True)
+    return cross_refs[:10]
+
+
 # ── 问题分解 ──────────────────────────────────────────────────────────────────
 
 def decompose_query(query: str, num_sub: int = 4) -> list[dict[str, str]]:
@@ -294,6 +344,12 @@ def synthesize_report(query: str, collection: dict[str, Any],
             "score": r.get("score", 0),
         })
 
+    # 交叉引用检测
+    all_results = []
+    for sr in sub_results:
+        all_results.extend(sr["results"])
+    cross_refs = detect_cross_references(all_results)
+
     return {
         "query": query,
         "key_findings": key_findings,
@@ -301,6 +357,7 @@ def synthesize_report(query: str, collection: dict[str, Any],
         "engines_used": collection["engines_used"],
         "source_distribution": source_counts,
         "citations": citations,
+        "cross_references": cross_refs,
         "gaps": gaps,
         "elapsed_ms": collection["elapsed_ms"],
         "sub_query_count": len(sub_results),
@@ -370,6 +427,12 @@ def main():
             print("── 引用列表 ──")
             for c in report["citations"]:
                 print(f"  {c['id']} {c['title'][:50]} ({c['source']})")
+            print()
+
+        if report.get("cross_references"):
+            print("── 交叉引用（多源佐证）──")
+            for cr in report["cross_references"]:
+                print(f"  「{cr['ngram'][:30]}」 ← {cr['source_count']} 个来源：{', '.join(cr['domains'][:3])}")
             print()
 
         if report["gaps"]:
