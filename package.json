@@ -19,7 +19,7 @@
   "author": "Argo Search",
   "repository": {
     "type": "git",
-    "url": "https://github.com/taxueseek/unified-search"
+    "url": "https://github.com/taxueseek/argo"
   },
   "bin": {
     "argo-mcp": "./bin/argo.js"
@@ -34,7 +34,10 @@
   "engines": {
     "node": ">=18"
   },
-  "os": ["darwin", "linux"],
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "dependencies": {},
   "devDependencies": {}
 }
