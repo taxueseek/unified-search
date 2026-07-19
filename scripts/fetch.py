@@ -45,39 +45,49 @@ class ContentExtractor(HTMLParser):
             self._current_text.append(data)
 
 
-def fetch_page(url: str, max_chars: int = 3000, timeout: int = 8) -> dict[str, Any]:
-    """抓取页面并提取正文。"""
+def fetch_page(url: str, max_chars: int = 3000, timeout: int = 8,
+              raw: bool = False) -> dict[str, Any]:
+    """抓取页面并提取正文。
+
+    Args:
+        url: 目标 URL
+        max_chars: 最大返回字符数
+        timeout: 超时秒数
+        raw: True 时返回原始 HTML（用于 extract/crawl_sitemap 等需要 HTML 的场景）
+    """
     try:
         req = urllib.request.Request(url, headers={
-            "User-Agent": "unified-search/2.1 (+local-research)",
-            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "unified-search/2.5 (+local-research)",
+            "Accept": "text/html,application/xhtml+xml,application/xml",
         })
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             content_type = resp.headers.get("Content-Type", "")
             if "pdf" in content_type:
-                return {"url": url, "content": "", "length": 0, "success": False, "error": "PDF not supported"}
-            raw = resp.read(max_chars * 5)
+                return {"url": url, "content": "", "html": "", "length": 0, "success": False, "error": "PDF not supported"}
+            raw_bytes = resp.read(max(max_chars * 5, 500000))
             # 编码检测
             charset = "utf-8"
             if "charset=" in content_type:
                 charset = content_type.split("charset=")[-1].strip().split(";")[0]
-            html = raw.decode(charset, errors="replace")
+            html = raw_bytes.decode(charset, errors="replace")
 
+        # 正文提取
         extractor = ContentExtractor()
         extractor.feed(html)
-
-        # 按文本密度排序，取 top blocks 作为正文
         extractor._blocks.sort(key=lambda x: x[0], reverse=True)
         content = "\n\n".join(text for _, text in extractor._blocks[:8])
 
-        return {
+        result = {
             "url": url,
             "content": content[:max_chars],
             "length": len(content),
             "success": True,
         }
+        if raw:
+            result["html"] = html[:max(max_chars * 2, 100000)]
+        return result
     except Exception as e:
-        return {"url": url, "content": "", "length": 0, "success": False, "error": str(e)[:100]}
+        return {"url": url, "content": "", "html": "", "length": 0, "success": False, "error": str(e)[:100]}
 
 
 def fetch_pages_parallel(urls: list[str], max_chars: int = 3000,

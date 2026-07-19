@@ -1,7 +1,7 @@
 ---
-name: unified-search-v2
-description: 统一搜索入口 v2 — 4工具MCP服务：search（47引擎搜索）+ research（深度研究）+ evidence（可信度评估）+ clarify（意图消歧）。TF-IDF路由 + 成本感知 + RRF融合 + Bocha reranker。
-version: 2.0.0
+name: argo
+description: Argo 阿尔戈 — 6工具MCP服务：argo_search（47引擎搜索）+ argo_research（深度研究）+ argo_evidence（可信度评估）+ argo_clarify（意图消歧）+ argo_crawl（站点爬取）+ argo_extract（结构化提取）。TF-IDF路由 + 成本感知 + RRF融合 + Bocha reranker。
+version: 2.5.0
 triggers:
   - 搜索
   - 查一下
@@ -32,7 +32,7 @@ engines:
   - brave
 ---
 
-## Unified Search v2.0
+## Argo v2.5.0
 
 统一搜索入口 v2，替代零散的搜索命令。核心设计：
 
@@ -170,7 +170,7 @@ python3 scripts/clarify.py "有歧义的查询" --explain --json
 
 ### MCP 服务
 
-三个工具同时暴露为 MCP server（JSON-RPC over stdio），可被 Grok/Claude 等客户端直接调用：
+六个工具同时暴露为 MCP server（JSON-RPC over stdio），可被 Grok/Claude 等客户端直接调用：
 
 ```bash
 # 启动 MCP 服务
@@ -180,7 +180,7 @@ python3 scripts/mcp_server.py
 python3 scripts/mcp_server.py --test
 ```
 
-MCP 工具名：`unified_research`、`unified_evidence`、`unified_clarify`。
+MCP 工具名：`argo_search`、`argo_research`、`argo_evidence`、`argo_clarify`、`argo_crawl`、`argo_extract`。
 
 ### 成本感知路由公式
 
@@ -204,7 +204,7 @@ cost_factor:
 
 ### Local Search 子技能与 SearXNG 替代策略
 
-local-search 是 unified-search 内置的「零成本聚合后端」，不依赖独立的 SearXNG 服务：
+local-search 是 argo 内置的「零成本聚合后端」，不依赖独立的 SearXNG 服务：
 
 - **25 个本地引擎，20 个默认启用**：覆盖 web_general、chinese、academic、news、code、reference、vertical 七大类，
   统一通过 HTML/RSS/JSON/XML 解析公开页面。
@@ -214,9 +214,9 @@ local-search 是 unified-search 内置的「零成本聚合后端」，不依赖
   状态缓存 5 分钟；连续 2 次失败或单次 >8s 标记 unavailable，成功 1 次恢复。
   fast/budget 模式下只检查实际要用的引擎，避免全量探针拖慢响应。
 - **智能路由**（`sub-skills/local-search/smart_router.py`）：根据查询特征自动选择最优本地引擎组合。
-- **统一 schema**：输出与 unified-search 完全一致，直接参与 RRF 融合与 Bocha reranker。
+- **统一 schema**：输出与 argo 完全一致，直接参与 RRF 融合与 Bocha reranker。
 
-**SearXNG 替代说明**：当 SearXNG 未启用或不可用时，unified-search 在 `fast`/`budget` 模式
+**SearXNG 替代说明**：当 SearXNG 未启用或不可用时，argo 在 `fast`/`budget` 模式
 下会自动将 `local_search` 加入 `engines_combo` 首位，实现同等零成本聚合效果，无需运行
 SearXNG 实例。强制使用本地聚合：
 
@@ -227,7 +227,7 @@ python3 scripts/search.py "查询词" --local-first
 ### 文件结构
 
 ```
-unified-search-v2/
+argo-v2/
 ├── SKILL.md              # 本文件 — 技能注册文档
 ├── config.yaml           # 引擎配置 & 路由规则
 ├── backends/
@@ -246,7 +246,10 @@ unified-search-v2/
 │   ├── research.py       # [新] 深度研究工具
 │   ├── evidence.py       # [新] 可信度评估工具
 │   ├── clarify.py        # [新] 意图消歧工具
-│   └── mcp_server.py     # [新] MCP 服务层
+│   ├── crawl.py          # [新] 站点爬取工具
+│   ├── extract.py        # [新] 结构化提取工具
+│   ├── fetch.py          # [新] 页面抓取工具
+│   └── mcp_server.py     # [新] MCP 服务层（6 工具）
 ├── sub-skills/
 │   └── local-search/     # 本地引擎子技能
 └── tests/

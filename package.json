@@ -1,0 +1,40 @@
+{
+  "name": "argo-mcp",
+  "version": "2.5.0",
+  "description": "Argo — 47-engine unified search MCP server with TF-IDF routing, RRF fusion, and Bocha reranker. 6 tools: search, research, evidence, clarify, crawl, extract.",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "search",
+    "web-search",
+    "research",
+    "ai-agent",
+    "claude",
+    "grok",
+    "kimi",
+    "codex",
+    "argo"
+  ],
+  "license": "MIT",
+  "author": "Argo Search",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/taxuexunxian/argo-mcp"
+  },
+  "bin": {
+    "argo-mcp": "./bin/argo.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "config.yaml",
+    "backends/",
+    "sub-skills/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": ["darwin", "linux"],
+  "dependencies": {},
+  "devDependencies": {}
+}

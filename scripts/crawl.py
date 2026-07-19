@@ -8,10 +8,24 @@ from fetch import fetch_page
 def crawl_sitemap(url, max_pages=20, timeout=10):
     """从 sitemap.xml 爬取"""
     sitemap_url = urljoin(url, '/sitemap.xml')
-    result = fetch_page(sitemap_url, max_chars=50000, timeout=timeout)
+    result = fetch_page(sitemap_url, max_chars=50000, timeout=timeout, raw=True)
     if not result['success']:
-        return {'url': url, 'pages': [], 'total': 0, 'error': 'sitemap not found'}
-    urls = re.findall(r'<loc>(.*?)</loc>', result['content'])
+        # 尝试 robots.txt 指定的 sitemap
+        robots_url = urljoin(url, '/robots.txt')
+        robots_result = fetch_page(robots_url, max_chars=10000, timeout=timeout, raw=True)
+        if robots_result['success'] and 'Sitemap:' in robots_result.get('html', ''):
+            import re as _re
+            sitemap_urls = _re.findall(r'Sitemap:\s*(.+)', robots_result['html'])
+            if sitemap_urls:
+                sitemap_url = sitemap_urls[0].strip()
+                result = fetch_page(sitemap_url, max_chars=50000, timeout=timeout, raw=True)
+    if not result.get('success') or not result.get('html'):
+        return {'url': url, 'pages': [], 'total': 0, 'error': 'sitemap not found or empty'}
+    html = result.get('html', result.get('content', ''))
+    # 同时尝试从 raw content 提取（兼容 XML 被 ContentExtractor 过滤的情况）
+    urls = re.findall(r'<loc>\s*(.*?)\s*</loc>', html)
+    if not urls:
+        urls = re.findall(r'<loc>(.*?)</loc>', result.get('content', ''))
     urls = urls[:max_pages]
     pages = []
     with ThreadPoolExecutor(max_workers=5) as ex:

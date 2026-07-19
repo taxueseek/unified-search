@@ -236,6 +236,21 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
         merged.sort(key=lambda r: abs(r.get("score", 0) or 0), reverse=True)
         merged = merged[:max_results]
 
+    # 内嵌可信度评分（快速版本：authority + freshness，不含 cross_validation）
+    if merged:
+        try:
+            from evidence import score_authority, score_freshness
+            for r in merged:
+                url = r.get("url", "")
+                source = r.get("source", "")
+                auth = score_authority(url, source)
+                fresh = score_freshness(r)
+                r["authority"] = auth["score"]
+                r["authority_tier"] = auth["tier"]
+                r["freshness"] = fresh["score"]
+        except Exception:
+            pass  # evidence 模块不可用时跳过
+
     if on_progress:
         on_progress(Stage.MERGING, {"count": len(merged)})
 
@@ -295,9 +310,35 @@ def _collect_errors(raw_results: dict[str, list[dict[str, Any]]]) -> list[str]:
 
 def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = False,
                  skip_cache: bool = False, timeout: int = 10,
-                 depth: str = "fast", mode: str = "auto", local_first: bool = False) -> dict[str, Any]:
-    """统一搜索便捷入口。"""
-    cache = SearchCache()
+                 depth: str = "fast", mode: str = "auto", local_first: bool = False,
+                 rewrite: bool = True, cache: Any = None) -> dict[str, Any]:
+    """统一搜索便捷入口。
+
+    Args:
+        query: 搜索查询词
+        engine: 指定引擎（默认 auto）
+        n: 最大结果数
+        explain: 是否输出路由解释
+        skip_cache: 是否跳过缓存
+        timeout: 超时
+        depth: 搜索深度
+        mode: 预算模式
+        local_first: 强制本地优先
+        rewrite: 是否自动改写查询（默认 True）
+    """
+    cache = cache if cache is not None else SearchCache()
+    rewrite_result = None
+
+    # 查询改写：追加领域关键词提升搜索质量
+    if rewrite:
+        try:
+            from query_rewriter import rewrite_query as do_rewrite
+            rewrite_result = do_rewrite(query)
+            if rewrite_result["rewritten"] and rewrite_result["confidence"] >= 0.7:
+                query = rewrite_result["rewritten"]
+        except Exception:
+            pass  # 改写失败不影响搜索
+
     if local_first:
         decision = route_query(query, engine_override="local_search", mode=mode)
     else:
@@ -310,9 +351,17 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
             f"tfidf={decision.get('tfidf_scores', [])} mode={mode}",
             file=sys.stderr,
         )
-    return execute_search(query=query, decision=decision, max_results=n,
+    result = execute_search(query=query, decision=decision, max_results=n,
                           timeout=timeout, depth=depth, cache=cache,
                           skip_cache=skip_cache, mode=mode)
+    if rewrite_result and rewrite_result["rewritten"]:
+        result["rewritten_query"] = {
+            "original": rewrite_result["original"],
+            "rewritten": rewrite_result["rewritten"],
+            "confidence": rewrite_result["confidence"],
+            "reason": rewrite_result["reason"],
+        }
+    return result
 
 
 # ── 输出格式化 ─────────────────────────────────────────────────────────────────
@@ -402,6 +451,18 @@ def main():
     else:
         decision = route_query(args.query, engine_override=args.engine, mode=args.mode)
 
+    # 查询改写
+    rewrite_result = None
+    try:
+        from query_rewriter import rewrite_query as do_rewrite
+        rewrite_result = do_rewrite(args.query)
+        if rewrite_result["rewritten"] and rewrite_result["confidence"] >= 0.7:
+            search_query = rewrite_result["rewritten"]
+        else:
+            search_query = args.query
+    except Exception:
+        search_query = args.query
+
     if args.explain:
         combo = decision.get('engines_combo', decision.get('engines', []))
         print(
@@ -410,6 +471,12 @@ def main():
             f"tfidf={decision.get('tfidf_scores', [])} mode={args.mode}",
             file=sys.stderr,
         )
+        if rewrite_result and rewrite_result["rewritten"]:
+            print(
+                f"[改写] {rewrite_result['original']} → {rewrite_result['rewritten']} "
+                f"({rewrite_result['confidence']:.0%})",
+                file=sys.stderr,
+            )
 
     on_progress = None
     if args.progress:
@@ -417,10 +484,18 @@ def main():
             print(f"[progress] {stage.value} {data}", file=sys.stderr)
 
     results = execute_search(
-        query=args.query, decision=decision, max_results=args.max_results,
+        query=search_query, decision=decision, max_results=args.max_results,
         timeout=args.timeout, depth=args.depth, cache=cache,
         skip_cache=args.no_cache, mode=args.mode, on_progress=on_progress,
     )
+
+    if rewrite_result and rewrite_result["rewritten"]:
+        results["rewritten_query"] = {
+            "original": rewrite_result["original"],
+            "rewritten": rewrite_result["rewritten"],
+            "confidence": rewrite_result["confidence"],
+            "reason": rewrite_result["reason"],
+        }
 
     if args.json_output:
         public = {k: v for k, v in results.items() if not k.startswith("_")}

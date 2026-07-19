@@ -30,6 +30,13 @@ except ImportError:
     from tfidf_router import semantic_route, get_router
     from quota import get_quota_manager
 
+# 自适应学习（可选依赖）
+try:
+    from adaptive import get_learner
+    _adaptive_learner = get_learner()
+except Exception:
+    _adaptive_learner = None
+
 
 # ── 特征提取 ──────────────────────────────────────────────────────────────────
 
@@ -153,6 +160,24 @@ def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "a
             filtered.insert(0, "local_search")
         filtered = filtered[:2]
 
+    # 自适应学习过滤：排除近期表现差的引擎（成功率 < 30% 或综合评分 < 0.3）
+    if _adaptive_learner is not None and len(filtered) > 1:
+        original = filtered[:]
+        filtered = [e for e in filtered if _adaptive_learner.get_score(e) >= 0.3]
+        if not filtered:
+            filtered = original
+        elif len(filtered) < len(original) and "local_search" in enabled and "local_search" not in filtered:
+            filtered.append("local_search")
+
+    # 健康探针过滤：排除已知不可达的 HTTP 引擎
+    try:
+        from health_probe import get_engine_status
+        healthy = [e for e in filtered if get_engine_status(e).get("available", True)]
+        if healthy:
+            filtered = healthy
+    except Exception:
+        pass  # 健康探针模块不可用时跳过
+
     return filtered
 
 
@@ -215,13 +240,24 @@ def route_query(query: str, engine_override: str = "auto",
             if not engines_combo:
                 engines_combo = sorted(enabled)[:2] if enabled else ["anysearch"]
 
-        # TF-IDF 验证
+        # TF-IDF 验证 + catch-all 修复
+        tfidf_best_score = tfidf_scores[0][1] if tfidf_scores else 0.0
+        is_catch_all = not domain.get("patterns", [])  # 无模式 = 兜底域
+
         if tfidf_best and tfidf_best in engines_combo:
             confidence = 0.95
         elif tfidf_best and tfidf_best != engines_combo[0]:
             confidence = 0.8
+            # catch-all 域 + TF-IDF 高置信度推荐 → 注入推荐引擎到首位
+            if is_catch_all and tfidf_best_score > 0.15 and tfidf_best in enabled:
+                engines_combo = [tfidf_best] + [e for e in engines_combo if e != tfidf_best]
+                confidence = 0.85
         else:
             confidence = 0.9
+            # catch-all 域 + TF-IDF 推荐但不在 combo 中 → 前置
+            if is_catch_all and tfidf_best and tfidf_best_score > 0.15 and tfidf_best in enabled:
+                engines_combo.insert(0, tfidf_best)
+                confidence = 0.8
 
         parallel = bool(domain.get("parallel", False)) or len(engines_combo) > 2
         # fast 模式强制串行，先 local_search 成功即避免额外 HTTP 开销
@@ -236,6 +272,7 @@ def route_query(query: str, engine_override: str = "auto",
             reason=(
                 f"{_feature_labels(features)} → 命中域 [{domain.get('name', '?')}]"
                 + (f" [TF-IDF→{tfidf_best}]" if tfidf_best else "")
+                + (f" [TF-IDF覆写catch-all]" if is_catch_all and tfidf_best and tfidf_best_score > 0.15 and tfidf_best in engines_combo else "")
                 + f" → {_ENGINE_NAMES.get(engines_combo[0], engines_combo[0])}"
             ),
             confidence=confidence, features=features,

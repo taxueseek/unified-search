@@ -130,7 +130,6 @@ def _validate_engine_paths(config: dict[str, Any]) -> dict[str, Any]:
         cmd_path = Path(cmd_path_str).expanduser()
         if not cmd_path.exists():
             spec["enabled"] = False
-            _log.warning(f"引擎 {name} 路径不存在，已自动禁用: {cmd_path}")
     return config
 
 
@@ -160,7 +159,11 @@ def load_config(force: bool = False) -> dict[str, Any]:
             _config_cache = _validate_engine_paths(_resolve_relative_paths(_expand_value(json.loads(json.dumps(DEFAULT_CONFIG)))))
     except ImportError as e:
         _config_load_error = str(e)
-        raise
+        import sys as _sys
+        print(f"[unified-search] PyYAML 未安装，使用内置默认配置。安装：pip install pyyaml。原因：{e}", file=_sys.stderr)
+        if _config_cache is None:
+            _config_cache = _validate_engine_paths(_resolve_relative_paths(_expand_value(json.loads(json.dumps(DEFAULT_CONFIG)))))
+        return _config_cache
     except Exception as e:
         _config_load_error = str(e)
         if _config_cache is None:

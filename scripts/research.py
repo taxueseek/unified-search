@@ -405,6 +405,16 @@ def deep_research(query: str, num_sub_queries: int = 4, max_results: int = 5,
                   timeout: int = 15, depth: str = "balanced",
                   mode: str = "auto") -> dict[str, Any]:
     """执行深度研究。"""
+    # 0. 查询改写
+    rewrite_result = None
+    try:
+        from query_rewriter import rewrite_query as do_rewrite
+        rewrite_result = do_rewrite(query)
+        if rewrite_result["rewritten"] and rewrite_result["confidence"] >= 0.7:
+            query = rewrite_result["rewritten"]
+    except Exception:
+        pass
+
     # 1. 问题分解
     sub_queries = decompose_query(query, num_sub_queries)
 
@@ -416,6 +426,14 @@ def deep_research(query: str, num_sub_queries: int = 4, max_results: int = 5,
 
     # 4. 综合报告
     report = synthesize_report(query, collection, gaps)
+
+    if rewrite_result and rewrite_result["rewritten"]:
+        report["rewritten_query"] = {
+            "original": rewrite_result["original"],
+            "rewritten": rewrite_result["rewritten"],
+            "confidence": rewrite_result["confidence"],
+            "reason": rewrite_result["reason"],
+        }
 
     return report
 
