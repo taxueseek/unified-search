@@ -134,6 +134,13 @@ AMBIGUOUS_TERMS = {
         ],
         "disambiguation_keywords": {"tech": ["容器", "镜像", "compose", "Kubernetes", "部署"]},
     },
+    "Go": {
+        "meanings": [
+            {"text": "Go 编程语言", "domain": "tech", "weight": 0.7},
+            {"text": "去/进行（动词）", "domain": "general", "weight": 0.3},
+        ],
+        "disambiguation_keywords": {"tech": ["Golang", "并发", "goroutine", "channel", "编译", "stdlib"]},
+    },
     "Redis": {
         "meanings": [
             {"text": "Redis 缓存数据库", "domain": "tech", "weight": 0.9},
@@ -327,6 +334,47 @@ AMBIGUOUS_TERMS = {
     },
 }
 
+# ── 品牌碰撞检测 ──────────────────────────────────────────────────────────────
+
+BRAND_COLLISIONS = {
+    "Amazon": {"domains": ["amazon.com", "aws.amazon.com"], "alt": ["亚马逊（河流/地区）"]},
+    "Apple": {"domains": ["apple.com"], "alt": ["苹果（水果）"]},
+    "小米": {"domains": ["xiaomi.com", "mi.com"], "alt": ["小米（谷物）"]},
+    "华为": {"domains": ["huawei.com"], "alt": ["华为（人名）"]},
+    "特斯拉": {"domains": ["tesla.com"], "alt": ["尼古拉·特斯拉（发明家）"]},
+    "字节": {"domains": ["bytedance.com"], "alt": ["字节（计算机单位）"]},
+    "快手": {"domains": ["kuaishou.com"], "alt": ["快手（手快）"]},
+    "贝壳": {"domains": ["ke.com", "beike.com"], "alt": ["贝壳（海洋生物）"]},
+    "飞书": {"domains": ["feishu.cn"], "alt": ["飞来的书信"]},
+    "钉钉": {"domains": ["dingtalk.com"], "alt": ["钉钉子的声音"]},
+    "美团": {"domains": ["meituan.com"], "alt": ["美好的团体"]},
+    "京东": {"domains": ["jd.com"], "alt": ["京东（地名）"]},
+    "淘宝": {"domains": ["taobao.com"], "alt": ["淘到的宝贝"]},
+    "拼多多": {"domains": ["pinduoduo.com"], "alt": ["拼凑"]},
+    "蔚来": {"domains": ["nio.com"], "alt": ["蔚蓝/蔚然"]},
+    "理想": {"domains": ["lixiang.com"], "alt": ["理想（概念）"]},
+    "小鹏": {"domains": ["xiaopeng.com"], "alt": ["小鹏（人名）"]},
+    "豆瓣": {"domains": ["douban.com"], "alt": ["豆瓣酱"]},
+    "雪球": {"domains": ["xueqiu.com"], "alt": ["雪球（游戏）"]},
+    "知乎": {"domains": ["zhihu.com"], "alt": ["知乎（文言文）"]},
+    "闲鱼": {"domains": ["goofish.com"], "alt": ["闲置的鱼"]},
+    "盒马": {"domains": ["hema.com"], "alt": ["盒马（动物）"]},
+}
+
+
+def detect_brand_collision(query: str) -> dict | None:
+    """检测查询中的品牌碰撞风险。"""
+    for brand, info in BRAND_COLLISIONS.items():
+        if brand in query or brand.lower() in query.lower():
+            return {
+                "brand": brand,
+                "collision_domains": info["domains"],
+                "alt_meanings": info["alt"],
+                "warning": f"「{brand}」可能指向多个品牌/产品",
+            }
+    return None
+
+
 # 意图模式
 INTENT_PATTERNS = {
     "search_fact": {
@@ -399,29 +447,46 @@ def analyze_query(query: str) -> dict[str, Any]:
 
     # 歧义检测
     for term, info in AMBIGUOUS_TERMS.items():
-        if term in query:
+        if term in query or (term.isascii() and term.isupper() and re.search(r'\b' + re.escape(term) + r'\b', query)):
             # 检查上下文关键词
             matched_meanings = []
             for meaning in info["meanings"]:
                 domain = meaning["domain"]
                 keywords = info.get("disambiguation_keywords", {}).get(domain, [])
                 match_count = sum(1 for kw in keywords if kw in query)
-                if match_count > 0:
+                # 强信号加分：产品型号、金融术语、学术术语
+                strong_bonus = 0
+                if domain == "auto" and re.search(r'(SU7|Model|ET5|ES6|P7|G6|L系列|MEGA|AION)', query, re.I):
+                    strong_bonus = 0.3
+                elif domain == "finance" and re.search(r'(股价|财报|市值|基金|ETF|净值|涨跌|K线|分红)', query):
+                    strong_bonus = 0.2
+                elif domain == "tech" and re.search(r'(论文|paper|arxiv|API|SDK|框架|库|编程|代码|编译|部署)', query, re.I):
+                    strong_bonus = 0.15
+                elif domain == "energy" and re.search(r'(光伏|风电|储能|碳中和|太阳能|风能)', query):
+                    strong_bonus = 0.2
+                if match_count > 0 or strong_bonus > 0:
                     matched_meanings.append({
                         "meaning": meaning["text"],
                         "domain": domain,
                         "context_match": match_count,
-                        "weight": meaning["weight"] + match_count * 0.1,
+                        "base_weight": meaning["weight"],
+                        "weight": meaning["weight"] + match_count * 0.1 + strong_bonus,
                     })
 
             if matched_meanings:
                 matched_meanings.sort(key=lambda x: x["weight"], reverse=True)
-                conf = min(0.5 + matched_meanings[0]["context_match"] * 0.15, 0.95)
+                top = matched_meanings[0]
+                # 置信度计算：基础分 + 关键词匹配加分 + 强信号加分
+                base_conf = 0.5
+                keyword_bonus = min(top["context_match"] * 0.12, 0.3)
+                # strong_bonus 从 weight 中提取（weight = base_weight + keyword*0.1 + strong_bonus）
+                strong_bonus = max(0, top["weight"] - top.get("base_weight", 0.5) - top["context_match"] * 0.1)
+                conf = min(base_conf + keyword_bonus + strong_bonus * 0.5, 0.95)
                 analysis["ambiguities"].append({
                     "term": term,
                     "possible_meanings": [m["meaning"] for m in matched_meanings],
-                    "top_choice": matched_meanings[0]["meaning"],
-                    "confidence": conf,
+                    "top_choice": top["meaning"],
+                    "confidence": round(conf, 2),
                 })
                 analysis["confidence"] *= conf
             else:
@@ -464,6 +529,12 @@ def analyze_query(query: str) -> dict[str, Any]:
     cve_codes = re.findall(r"(CVE-\d{4}-\d+)", query, re.I)
     for c in cve_codes:
         analysis["entities"].append({"text": c, "type": "cve"})
+
+    # 品牌碰撞检测
+    collision = detect_brand_collision(query)
+    if collision:
+        analysis["brand_collision"] = collision
+        analysis["confidence"] *= 0.85
 
     # 推荐策略
     if analysis["ambiguities"] and analysis["ambiguities"][0]["confidence"] < 0.7:

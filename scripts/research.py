@@ -188,7 +188,28 @@ def decompose_query(query: str, num_sub: int = 4) -> list[dict[str, str]]:
             "strategy": "general"
         })
 
-    return sub_queries[:num_sub]
+    return _deduplicate_sub_queries(sub_queries[:num_sub])
+
+
+def _deduplicate_sub_queries(sub_queries: list[dict[str, str]]) -> list[dict[str, str]]:
+    """基于 Jaccard 相似度去重子查询。"""
+    import re as _re
+    def _tokens(q: str) -> set:
+        return set(_re.findall(r'[a-zA-Z]+|[\u4e00-\u9fff]', q.lower()))
+    unique = []
+    seen_tokens = []
+    for sq in sub_queries:
+        tokens = _tokens(sq["query"])
+        is_dup = False
+        for prev in seen_tokens:
+            jaccard = len(tokens & prev) / max(len(tokens | prev), 1)
+            if jaccard > 0.6:
+                is_dup = True
+                break
+        if not is_dup:
+            unique.append(sq)
+            seen_tokens.append(tokens)
+    return unique
 
 
 # ── 多源采集 ──────────────────────────────────────────────────────────────────

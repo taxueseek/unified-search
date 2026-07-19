@@ -139,6 +139,20 @@ def score_authority(url: str, source: str = "") -> dict[str, Any]:
 
 def score_freshness(result: dict[str, Any], query_time: float = None) -> dict[str, Any]:
     """评估结果的时效性。"""
+
+    def _extract_year_from_url(url: str):
+        """从 URL 路径提取年份。"""
+        patterns = [
+            r"/(20\d{2})[/-](\d{1,2})[/-](\d{1,2})",
+            r"/(20\d{2})[/-](\d{1,2})",
+            r"/(20\d{2})/",
+        ]
+        for p in patterns:
+            m = re.search(p, url)
+            if m:
+                return int(m.group(1))
+        return None
+
     if query_time is None:
         query_time = time.time()
 
@@ -170,9 +184,23 @@ def score_freshness(result: dict[str, Any], query_time: float = None) -> dict[st
             score = 0.3
             reason = f"{year}年（{age_years}年前，较旧）"
     else:
-        # 无时间信息
-        score = 0.5
-        reason = "无明确时间标记"
+        # 无时间信息，尝试从 URL 提取
+        url_year = _extract_year_from_url(url)
+        if url_year:
+            from datetime import datetime
+            age_years = datetime.now().year - url_year
+            if age_years <= 1:
+                score = 0.8
+                reason = f"URL含{url_year}年"
+            elif age_years <= 3:
+                score = 0.6
+                reason = f"URL含{url_year}年（{age_years}年前）"
+            else:
+                score = 0.4
+                reason = f"URL含{url_year}年（较旧）"
+        else:
+            score = 0.5
+            reason = "无明确时间标记"
 
     # 时效性关键词加分
     if re.search(r"(最新|latest|recent|breaking|just|刚刚|今日|today)", combined, re.I):
