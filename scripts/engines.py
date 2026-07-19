@@ -186,7 +186,7 @@ def _build_http_engine(spec: dict[str, Any]) -> Any:
                         "source": output_map.get("item_source", "source"),
                     })(data)
                 return _parse_generic(data, spec.get("_name", ""))
-        except (urllib.error.URLError, urllib.error.HTTPError, Exception) as e:
+        except Exception as e:
             logger.warning(f"HTTP 引擎失败: {e}")
             return []
     return _engine

@@ -320,6 +320,7 @@ def route_query(query: str, engine_override: str = "auto",
 
 def _cli():
     import argparse
+    import json
     parser = argparse.ArgumentParser(description="Unified Search v2 路由器")
     parser.add_argument("query")
     parser.add_argument("--engine", default="auto")

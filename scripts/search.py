@@ -32,6 +32,23 @@ from engines import search as engine_search, available_engines
 from config import get_execution_config, get_cost_factor
 
 
+# ── 查询改写辅助 ────────────────────────────────────────────────────────────────
+
+def _apply_query_rewrite(query: str) -> tuple[str, dict | None]:
+    """统一查询改写逻辑，返回 (改写后的查询, 改写结果字典)。
+
+    改写失败时静默返回原查询，不影响搜索流程。
+    """
+    try:
+        from query_rewriter import rewrite_query as do_rewrite
+        result = do_rewrite(query)
+        if result["rewritten"] and result["confidence"] >= 0.7:
+            return result["rewritten"], result
+    except Exception:
+        pass
+    return query, None
+
+
 # ── 进度阶段 ──────────────────────────────────────────────────────────────────
 
 class Stage(str, Enum):
@@ -181,13 +198,22 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
     retry_count = exec_cfg.get("retry_count", 0)
 
     def _exec_engine(eng: str, retries: int = retry_count) -> list[dict[str, Any]]:
-        for attempt in range(retries + 1):
-            res = engine_search(query, eng, n=max_results, timeout=timeout, depth=depth, mode=mode)
-            if res and any("error" not in r for r in res):
-                return res
+        """执行单引擎搜索，带重试和深度降级。
+
+        策略：
+          1. 按 retries 次数重试当前 depth
+          2. 若全部失败且 depth != balanced，降级到 balanced 再试一次
+          3. 仍失败则返回最后一次的结果（可能为空或含 error）
+        """
+        last_result: list[dict[str, Any]] = []
+        for _attempt in range(retries + 1):
+            last_result = engine_search(query, eng, n=max_results, timeout=timeout, depth=depth, mode=mode)
+            if last_result and any("error" not in r for r in last_result):
+                return last_result
+        # 深度降级：非 balanced 时尝试 balanced 深度
         if depth != "balanced":
-            return engine_search(query, eng, n=max_results, timeout=timeout, depth="balanced", mode=mode)
-        return res if res else []
+            last_result = engine_search(query, eng, n=max_results, timeout=timeout, depth="balanced", mode=mode)
+        return last_result
 
     if parallel:
         with ThreadPoolExecutor(max_workers=min(len(engines), 3)) as ex:
@@ -327,17 +353,11 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
         rewrite: 是否自动改写查询（默认 True）
     """
     cache = cache if cache is not None else SearchCache()
-    rewrite_result = None
 
     # 查询改写：追加领域关键词提升搜索质量
+    rewrite_result = None
     if rewrite:
-        try:
-            from query_rewriter import rewrite_query as do_rewrite
-            rewrite_result = do_rewrite(query)
-            if rewrite_result["rewritten"] and rewrite_result["confidence"] >= 0.7:
-                query = rewrite_result["rewritten"]
-        except Exception:
-            pass  # 改写失败不影响搜索
+        query, rewrite_result = _apply_query_rewrite(query)
 
     if local_first:
         decision = route_query(query, engine_override="local_search", mode=mode)
@@ -452,16 +472,7 @@ def main():
         decision = route_query(args.query, engine_override=args.engine, mode=args.mode)
 
     # 查询改写
-    rewrite_result = None
-    try:
-        from query_rewriter import rewrite_query as do_rewrite
-        rewrite_result = do_rewrite(args.query)
-        if rewrite_result["rewritten"] and rewrite_result["confidence"] >= 0.7:
-            search_query = rewrite_result["rewritten"]
-        else:
-            search_query = args.query
-    except Exception:
-        search_query = args.query
+    search_query, rewrite_result = _apply_query_rewrite(args.query)
 
     if args.explain:
         combo = decision.get('engines_combo', decision.get('engines', []))

@@ -49,6 +49,10 @@ CACHE_TIERS = {
     "evergreen": 86400,  # 24 小时
 }
 
+# 当天缓存策略：非时效性域在当天内延长缓存至日末
+# 时效性域（financial/news/realtime）保持短 TTL，确保数据新鲜度
+SAME_DAY_ELIGIBLE_TIERS = {"general", "research", "evergreen"}
+
 # query domain → TTL tier 映射
 DOMAIN_TIER_MAP = {
     "stock_query": "financial",
@@ -97,6 +101,11 @@ class LRUCache:
                 if len(self._store) >= self._max_size:
                     self._store.popitem(last=False)
                 self._store[key] = value
+
+    def remove(self, key: str) -> None:
+        """移除指定键（不存在时静默）。"""
+        with self._lock:
+            self._store.pop(key, None)
 
     def clear(self):
         with self._lock:
@@ -265,7 +274,12 @@ class SQLiteCache:
 class SearchCache:
     """
     双层缓存引擎：L1 LRU + L2 SQLite
-    缓存键 = SHA256(query + "|" + engine + "|" + str(max_results))[:32]
+    缓存键 = SHA256(query + "|" + engine + "|" + str(max_results) + "|" + domain)[:32]
+
+    缓存策略：
+      - 时效性域（financial/news/realtime）：短 TTL，确保数据新鲜度
+      - 非时效性域（general/research/evergreen）：当天内相同查询命中缓存，
+        避免重复拉取，显著降低等待时间
     """
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH, ttl: int = DEFAULT_TTL):
@@ -276,27 +290,50 @@ class SearchCache:
         self._l2 = SQLiteCache(db_path=self._db_path, ttl=self._ttl)
 
     @staticmethod
-    def _key(query: str, engine: str, max_results: int) -> str:
-        raw = f"{query}|{engine}|{max_results}"
+    def _key(query: str, engine: str, max_results: int, domain: str = "general") -> str:
+        """生成缓存键，包含 domain 防止跨域缓存污染。"""
+        raw = f"{query}|{engine}|{max_results}|{domain}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
     @staticmethod
     def resolve_ttl(domain: str = "general") -> int:
-        """根据 domain 返回 TTL（秒）。"""
+        """根据 domain 返回基础 TTL（秒）。"""
         tier = DOMAIN_TIER_MAP.get(domain, "general")
         return CACHE_TIERS.get(tier, DEFAULT_TTL)
+
+    @staticmethod
+    def _seconds_until_end_of_day() -> int:
+        """计算距离当天 23:59:59 的剩余秒数。"""
+        import datetime
+        now = datetime.datetime.now()
+        end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
+        return max(int((end_of_day - now).total_seconds()), 60)
+
+    def _resolve_effective_ttl(self, domain: str, base_ttl: int | None = None) -> int:
+        """解析有效 TTL：非时效性域在当天内延长缓存至日末。
+
+        策略：
+          - 时效性域（financial/news/realtime）：保持短 TTL，确保数据新鲜度
+          - 非时效性域（general/research/evergreen）：当天内延长至日末，
+            避免同一天内重复查询重复拉取
+        """
+        tier = DOMAIN_TIER_MAP.get(domain, "general")
+        ttl = base_ttl if base_ttl is not None else self.resolve_ttl(domain)
+        if tier in SAME_DAY_ELIGIBLE_TIERS:
+            return min(ttl, self._seconds_until_end_of_day())
+        return ttl
 
     def get(self, query: str, engine: str, max_results: int,
             domain: str = "general") -> Optional[dict]:
         """先查 L1，未命中再查 L2。"""
-        key = self._key(query, engine, max_results)
+        key = self._key(query, engine, max_results, domain)
         hit = self._l1.get(key)
         if hit is not None:
-            ttl = hit.get("_ttl", self.resolve_ttl(domain))
+            ttl = hit.get("_ttl", self._resolve_effective_ttl(domain))
             if time.time() - hit.get("_ts", 0) < ttl:
                 hit["_cache_level"] = "L1"
                 return hit
-            self._l1._store.pop(key, None)
+            self._l1.remove(key)
 
         hit = self._l2.get(key)
         if hit is not None:
@@ -308,8 +345,8 @@ class SearchCache:
     def set(self, query: str, engine: str, max_results: int, results: dict,
             domain: str = "general", ttl: int | None = None):
         """写入双层缓存。"""
-        key = self._key(query, engine, max_results)
-        effective_ttl = ttl if ttl is not None else self.resolve_ttl(domain)
+        key = self._key(query, engine, max_results, domain)
+        effective_ttl = self._resolve_effective_ttl(domain, ttl)
         value = {**results, "_domain": domain, "_ttl": effective_ttl, "_ts": time.time()}
         self._l1.set(key, value)
         self._l2.set(key, query, engine, max_results, value, domain=domain, ttl=effective_ttl)
