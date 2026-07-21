@@ -360,5 +360,95 @@
       "question": 1.3, "answer": 1.3,
       "报错": 1.5, "调试": 1.5, "解决方案": 1.3
     }
+  },
+  "twitter": {
+    "label": "Twitter/X",
+    "documents": [
+      "tweet post thread discussion",
+      "breaking news real-time updates trending",
+      "tech announcements product launches",
+      "viral content opinions commentary",
+      "推文 推特 话题 讨论",
+      "热点 实时 资讯 观点"
+    ],
+    "boost_keywords": {
+      "twitter": 2.0, "tweet": 2.0, "retweet": 1.5,
+      "thread": 1.5, "trending": 1.5, "viral": 1.3,
+      "推特": 2.0, "推文": 2.0, "转发": 1.3,
+      "热门": 1.3, "话题": 1.3, "讨论": 1.2
+    }
+  },
+  "reddit": {
+    "label": "Reddit",
+    "documents": [
+      "reddit post discussion AMA",
+      "subreddit community opinion",
+      "programming questions answers",
+      "product reviews recommendations",
+      "reddit 帖子 讨论 AMA",
+      "社区 观点 推荐 评测",
+      "upvote comment award"
+    ],
+    "boost_keywords": {
+      "reddit": 2.0, "ama": 2.0, "subreddit": 2.0,
+      "upvote": 1.5, "downvote": 1.3, "comment": 1.3,
+      "reddit": 2.0, "帖子": 1.5, "讨论": 1.3,
+      "评论": 1.3, "社区": 1.2, "推荐": 1.3
+    }
+  },
+  "xiaohongshu": {
+    "label": "小红书",
+    "documents": [
+      "小红书 笔记 推荐 种草 拔草",
+      "美妆 护肤 穿搭 美食 旅行",
+      "评测 体验 心得 攻略",
+      "生活方式 家居 健身 摄影",
+      "博主 粉丝 点赞 收藏",
+      "口碑 真实体验 避坑"
+    ],
+    "boost_keywords": {
+      "小红书": 2.0, "xhs": 2.0, "种草": 2.0,
+      "拔草": 2.0, "笔记": 1.5, "推荐": 1.3,
+      "测评": 1.5, "体验": 1.3, "心得": 1.3,
+      "攻略": 1.5, "避坑": 1.5, "博主": 1.3,
+      "美妆": 1.5, "穿搭": 1.5, "护肤": 1.5,
+      "好用": 1.3, "安利": 1.3, "真实": 1.2
+    }
+  },
+  "bilibili": {
+    "label": "B站",
+    "documents": [
+      "bilibili video danmu comment",
+      "gaming tech review tutorial",
+      "anime manga entertainment",
+      "up主 视频 弹幕 评论",
+      "游戏 科技 教程 数码",
+      "番剧 动漫 音乐 舞蹈"
+    ],
+    "boost_keywords": {
+      "bilibili": 2.0, "b站": 2.0, "bilibili": 2.0,
+      "视频": 1.5, "up主": 2.0, "弹幕": 1.5,
+      "评论": 1.3, "播放": 1.3, "教程": 1.3,
+      "数码": 1.3, "游戏": 1.3, "科技": 1.3,
+      "番剧": 1.5, "动漫": 1.5, "鬼畜": 1.5
+    }
+  },
+  "weibo": {
+    "label": "微博",
+    "documents": [
+      "weibo post hot search trending",
+      "celebrity entertainment gossip",
+      "news breaking discussion",
+      "微博 热搜 话题 讨论",
+      "明星 娱乐 八卦 粉丝",
+      "社会 民生 热点 舆论"
+    ],
+    "boost_keywords": {
+      "微博": 2.0, "weibo": 2.0, "热搜": 2.0,
+      "话题": 1.5, "超话": 1.5, "粉丝": 1.3,
+      "八卦": 1.5, "娱乐": 1.3, "明星": 1.3,
+      "转发": 1.3, "评论": 1.3, "点赞": 1.2,
+      "社会": 1.2, "民生": 1.2, "舆论": 1.5
+    }
   }
 }

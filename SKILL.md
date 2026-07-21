@@ -1,7 +1,7 @@
 ---
 name: argo
-description: Argo 阿尔戈 — 6工具MCP服务：argo_search（47引擎搜索）+ argo_research（深度研究）+ argo_evidence（可信度评估）+ argo_clarify（意图消歧）+ argo_crawl（站点爬取）+ argo_extract（结构化提取）。TF-IDF路由 + 成本感知 + RRF融合 + Bocha reranker。
-version: 1.0.1
+description: Argo 阿尔戈 — 14工具MCP服务：argo_search（52引擎搜索）+ argo_research（深度研究+社交舆情）+ argo_evidence（可信度评估）+ argo_clarify（意图消歧）+ argo_crawl（站点爬取）+ argo_extract（结构化提取）+ argo_fetch（智能抓取+反检测浏览器降级）+ argo_screenshot（页面截图）+ argo_pdf（PDF结构化提取）+ argo_social_search（社交平台搜索）+ argo_social_sentiment（社交舆情分析）+ argo_twitter_search+ argo_reddit_search+ argo_xiaohongshu_search。TF-IDF路由 + 成本感知 + RRF融合 + Bocha reranker + 内容质量信号。
+version: 2.1.0
 triggers:
   - 搜索
   - 查一下
@@ -30,9 +30,14 @@ engines:
   - metaso
   - wolframalpha
   - brave
+  - twitter
+  - reddit
+  - xiaohongshu
+  - bilibili
+  - weibo
 ---
 
-## Argo v2.5.0
+## Argo v2.1.0
 
 统一搜索入口 v2，替代零散的搜索命令。核心设计：
 
@@ -45,6 +50,7 @@ engines:
 - **RRF 融合**：多引擎 Reciprocal Rank Fusion 去重合并
 - **Bocha Reranker**：语义精排后处理
 - **自适应学习**：success × latency × cost 三维评分，SQLite 持久化
+- **社交引擎**：Twitter/Reddit/小红书/B站/微博 5 大平台原生搜索
 
 ### 用法
 
@@ -127,6 +133,18 @@ python3 scripts/clarify.py "苹果股价" --json
 | felo | paid | AI综合答案 | ~3s |
 | **Bocha Reranker** | low | 语义精排（后处理） | ~500ms |
 
+### 社交平台引擎（v2.1 新增）
+
+| 引擎 | cost_tier | 特点 | 认证 |
+|------|-----------|------|------|
+| twitter | free | Twitter/X 推文搜索 | 可选（nitter 兜底） |
+| reddit | free | Reddit 帖子+评论 | 无需认证 |
+| xiaohongshu | free | 小红书笔记+评论 | xhs login |
+| bilibili | free | B站视频+弹幕 | 无需认证 |
+| weibo | free | 微博帖子+话题 | 无需认证 |
+
+社交引擎统一输出 `social_meta` 字段，包含作者、互动数据（点赞/评论/转发）、平台元信息。
+
 ### 三大增强工具（v2.0 新增）
 
 | 工具 | 功能 | 适用场景 | Token 开销 |
@@ -168,9 +186,21 @@ python3 scripts/clarify.py "有歧义的查询" --explain --json
 
 输出包含：`ambiguities`（歧义词+可能含义+置信度）、`intents`（意图分类）、`recommended_strategy`（推荐策略：clarify_first/deep_research/split_search/direct_search）。
 
+#### social-sentiment — 社交舆情研究（v2.1 新增）
+
+```bash
+# 跨平台舆情分析
+python3 scripts/research.py "iPhone 16 用户评价" --mode social-sentiment --platforms xiaohongshu,reddit,twitter
+
+# JSON 输出
+python3 scripts/research.py "AI Agent 产品口碑" --mode social-sentiment --json
+```
+
+输出包含：`platform_breakdown`（各平台帖子数）、`engagement_totals`（互动数据汇总）、`top_topics`（高频讨论话题）、`cross_platform_posts`（代表性内容）。
+
 ### MCP 服务
 
-六个工具同时暴露为 MCP server（JSON-RPC over stdio），可被 Grok/Claude 等客户端直接调用：
+十个工具同时暴露为 MCP server（JSON-RPC over stdio），可被 Grok/Claude/Kimi 等客户端直接调用：
 
 ```bash
 # 启动 MCP 服务
@@ -180,7 +210,7 @@ python3 scripts/mcp_server.py
 python3 scripts/mcp_server.py --test
 ```
 
-MCP 工具名：`argo_search`、`argo_research`、`argo_evidence`、`argo_clarify`、`argo_crawl`、`argo_extract`。
+MCP 工具名：`argo_search`、`argo_research`（含 social-sentiment 模式）、`argo_evidence`、`argo_clarify`、`argo_crawl`、`argo_extract`、`argo_fetch`、`argo_screenshot`、`argo_pdf`、`argo_social_search`、`argo_social_sentiment`、`argo_twitter_search`、`argo_reddit_search`、`argo_xiaohongshu_search`。
 
 ### 成本感知路由公式
 
@@ -247,13 +277,89 @@ argo-v2/
 │   ├── evidence.py       # [新] 可信度评估工具
 │   ├── clarify.py        # [新] 意图消歧工具
 │   ├── crawl.py          # [新] 站点爬取工具
-│   ├── extract.py        # [新] 结构化提取工具
-│   ├── fetch.py          # [新] 页面抓取工具
-│   └── mcp_server.py     # [新] MCP 服务层（6 工具）
+│   ├── extract.py         # 结构化提取工具
+│   ├── fetch.py           # 页面抓取工具（urllib）
+│   ├── fetch_v2.py        # [v2.0] 智能抓取（HTTP + Hound 浏览器降级）
+│   ├── content_signals.py # [v2.0] 内容质量信号系统
+│   ├── focus_extract.py   # [v2.0] BM25 聚焦提取
+│   ├── pdf_extract.py     # [v2.0] PDF 结构化提取
+│   ├── mcp_server.py      # MCP 服务层（14 工具）
+│   └── social_engines/    # [v2.1] 社交平台引擎
+│       ├── twitter_engine.py
+│       ├── reddit_engine.py
+│       ├── xiaohongshu_engine.py
+│       ├── bilibili_engine.py
+│       └── weibo_engine.py
 ├── sub-skills/
 │   └── local-search/     # 本地引擎子技能
 └── tests/
 ```
+
+### 三大增强工具（v2.0 新增）
+
+| 工具 | 功能 | 适用场景 | 依赖 |
+|------|------|---------|------|
+| `argo_fetch` | HTTP→反检测浏览器自动降级 + BM25 聚焦 + 质量信号 | 反爬网站、CF 保护页、JS 渲染页 | 可选：master_fetch |
+| `argo_screenshot` | 页面截图（全页/视口） | 布局验证、网页快照、多模态分析 | playwright |
+| `argo_pdf` | PDF→Markdown（表格+目录+元数据） | 论文/报告/白皮书解析 | pdfplumber 或 PyMuPDF |
+
+#### argo_fetch — 智能页面抓取
+
+```bash
+# 自动模式（HTTP 优先，失败升级浏览器）
+argo fetch "https://example.com"
+
+# BM25 聚焦提取（只返回相关段落）
+argo fetch "https://example.com/long-article" --focus "关键词"
+
+# 强制使用反检测浏览器
+argo fetch "https://cloudflare-protected.com" --use-browser
+```
+
+输出包含 Hound 质量信号：
+```json
+{
+  "content_ok": true,
+  "page_type": "article",
+  "source_type": "docs-site",
+  "is_official": true,
+  "is_stale": false,
+  "content_age_days": 45,
+  "quality_score": 0.85,
+  "fetch_method": "http"
+}
+```
+
+**降级触发条件**：HTTP 失败 / 内容 < 50 字符 / 检测到 CF 挑战 / 检测到 JS shell
+
+#### argo_screenshot — 页面截图
+
+```bash
+argo screenshot "https://example.com"
+argo screenshot "https://example.com" --full-page --output /tmp/page.png
+```
+
+#### argo_pdf — PDF 结构化提取
+
+```bash
+argo pdf "https://example.com/paper.pdf"
+argo pdf "https://example.com/paper.pdf" --pages "1-5"
+argo pdf "/local/file.pdf" --password "secret"
+```
+
+### 内容质量信号系统（v2.0 新增）
+
+所有抓取结果自动附带质量信号：
+
+| 信号 | 类型 | 说明 |
+|------|------|------|
+| `content_ok` | bool | 内容是否可信可用（quality_score > 0.3 且 word_count > 50） |
+| `page_type` | string | article/list/forum/qa/docs/js_shell/auth_wall/paywall |
+| `source_type` | string | gov/edu/github/news/blog/forum/qa/docs-site/ecommerce |
+| `is_official` | bool | 是否官方来源（.gov/.edu/github/厂商docs） |
+| `is_stale` | bool | 是否过期（> 365 天） |
+| `content_age_days` | int | 内容年龄（天） |
+| `quality_score` | float | 0-1 综合质量评分 |
 
 ### 输出 JSON Schema
 

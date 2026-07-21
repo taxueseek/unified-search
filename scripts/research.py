@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-research.py — 深度研究工具（wigolo research 理念移植）
+research.py — 深度研究工具（wigolo research 理念移植 + 社交舆情模式）
 
 核心能力：
   1. 问题分解：将复杂查询拆分为 3-5 个子查询
   2. 多源采集：对每个子查询并行执行搜索
   3. 综合报告：合并去重 + 来源标注 + 知识缺口识别
   4. 引用追踪：每个结论可追溯到具体搜索结果
+  5. 社交舆情：跨平台 UGC 情绪倾向 + 高频讨论点
 
 用法：
   python3 research.py "CRISPR-Cas9 脱靶效应的 AI 预测方法综述"
   python3 research.py "CVE-2024-6387 生产环境影响评估" --depth deep
   python3 research.py "台积电财报分歧分析" --sub-queries 5
+  python3 research.py "iPhone 16 用户评价" --mode social-sentiment --platforms xiaohongshu,reddit
 """
 
 from __future__ import annotations
@@ -438,6 +440,74 @@ def deep_research(query: str, num_sub_queries: int = 4, max_results: int = 5,
     return report
 
 
+# ── 社交舆情研究 ─────────────────────────────────────────────────────────────
+
+def social_sentiment_research(query: str, platforms: list[str] | None = None,
+                              max_results: int = 5) -> dict[str, Any]:
+    """社交舆情研究：跨平台 UGC 情绪与讨论分析"""
+    if platforms is None:
+        platforms = ["twitter", "reddit", "xiaohongshu"]
+
+    from search import super_search
+
+    platform_results: dict[str, list] = {}
+    all_results: list[dict] = []
+    engines_used: set[str] = set()
+    t0 = time.time()
+
+    for platform in platforms:
+        try:
+            result = super_search(query, n=max_results, engines=[platform], mode="fast")
+            results = result.get("results", [])
+            platform_results[platform] = results
+            all_results.extend(results)
+            engines_used.update(result.get("engines_used", []))
+        except Exception:
+            platform_results[platform] = []
+
+    # 互动数据聚合
+    engagement_totals = {"likes": 0, "comments": 0, "shares": 0, "views": 0}
+    top_topics: dict[str, int] = {}
+
+    for r in all_results:
+        meta = r.get("social_meta", {})
+        if isinstance(meta, dict):
+            engagement_totals["likes"] += meta.get("likes", meta.get("upvotes", meta.get("attitudes_count", 0)))
+            engagement_totals["comments"] += meta.get("comments", meta.get("num_comments", 0))
+            engagement_totals["shares"] += meta.get("shares", meta.get("retweets", meta.get("reposts_count", 0)))
+            engagement_totals["views"] += meta.get("views", meta.get("play_count", 0))
+        # 简单话题提取
+        title = r.get("title", "")
+        for word in title.split():
+            if len(word) > 2:
+                top_topics[word] = top_topics.get(word, 0) + 1
+
+    top_topics_sorted = sorted(top_topics.items(), key=lambda x: x[1], reverse=True)[:10]
+    elapsed = int((time.time() - t0) * 1000)
+
+    return {
+        "query": query,
+        "mode": "social-sentiment",
+        "platforms": platforms,
+        "total_posts": len(all_results),
+        "platform_breakdown": {p: len(r) for p, r in platform_results.items()},
+        "engagement_totals": engagement_totals,
+        "top_topics": [{"topic": t, "mentions": c} for t, c in top_topics_sorted],
+        "cross_platform_posts": [
+            {
+                "platform": r.get("source", ""),
+                "title": r.get("title", "")[:100],
+                "url": r.get("url", ""),
+                "snippet": r.get("snippet", "")[:200],
+                "social_meta": r.get("social_meta", {}),
+            }
+            for r in all_results[:15]
+        ],
+        "engines_used": sorted(engines_used),
+        "elapsed_ms": elapsed,
+    }
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -447,52 +517,67 @@ def main():
     parser.add_argument("-n", "--max-results", type=int, default=5, help="每个子查询最大结果数")
     parser.add_argument("--timeout", type=int, default=15, help="超时秒数")
     parser.add_argument("--depth", choices=["fast", "balanced", "deep"], default="balanced")
-    parser.add_argument("--mode", choices=["fast", "auto", "deep", "budget"], default="auto")
+    parser.add_argument("--mode", choices=["fast", "auto", "deep", "budget", "social-sentiment"], default="auto",
+                        help="研究模式：fast/auto/deep/budget/social-sentiment")
+    parser.add_argument("--platforms", type=str, default=None,
+                        help="社交平台列表（仅 social-sentiment 模式），逗号分隔")
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
-    report = deep_research(
-        args.query, args.sub_queries, args.max_results,
-        args.timeout, args.depth, args.mode
-    )
+    # 社交舆情模式
+    if args.mode == "social-sentiment":
+        platforms = [p.strip() for p in args.platforms.split(",")] if args.platforms else None
+        report = social_sentiment_research(args.query, platforms, args.max_results)
+    else:
+        report = deep_research(
+            args.query, args.sub_queries, args.max_results,
+            args.timeout, args.depth, args.mode
+        )
 
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        # 人类可读输出
-        print(f"\n{'='*60}")
-        print(f"深度研究报告：{report['query']}")
-        print(f"{'='*60}")
-        print(f"子查询数：{report['sub_query_count']} | 引擎：{', '.join(report['engines_used'])}")
-        print(f"总结果：{report['total_sources']} | 耗时：{report['elapsed_ms']}ms")
+        if report.get("mode") == "social-sentiment":
+            _print_social_report(report)
+        else:
+            _print_deep_report(report)
+
+
+def _print_social_report(report: dict):
+    """打印社交舆情报告"""
+    print(f"\n{'='*60}")
+    print(f"社交舆情分析：{report['query']}")
+    print(f"{'='*60}")
+    print(f"平台：{', '.join(report['platforms'])} | 引擎：{', '.join(report['engines_used'])}")
+    print(f"抓取帖子：{report['total_posts']} | 耗时：{report['elapsed_ms']}ms")
+    print()
+    print("── 平台分布 ──")
+    for platform, count in report["platform_breakdown"].items():
+        print(f"  {platform}: {count} 条")
+    print()
+    print("── 互动数据汇总 ──")
+    eng = report["engagement_totals"]
+    print(f"  点赞/投票：{eng['likes']:,} | 评论：{eng['comments']:,} | 转发：{eng['shares']:,} | 观看：{eng['views']:,}")
+    print()
+    print("── 高频讨论话题 ──")
+    for topic in report["top_topics"]:
+        print(f"  「{topic['topic']}」 ({topic['mentions']} 次)")
+    print()
+    print("── 代表性内容 ──")
+    for post in report["cross_platform_posts"][:5]:
+        meta = post.get("social_meta", {})
+        engagement = ""
+        if isinstance(meta, dict):
+            likes = meta.get("likes", meta.get("upvotes", meta.get("attitudes_count", 0)))
+            comments = meta.get("comments", meta.get("num_comments", 0))
+            engagement = f" | 👍{likes} 💬{comments}"
+        print(f"  [{post['platform']}] {post['title'][:60]}{engagement}")
+        print(f"    {post['url']}")
         print()
 
-        for f in report["key_findings"]:
-            print(f"▸ {f['aspect']}")
-            print(f"  策略：{f['strategy']} | 结果数：{f['result_count']}")
-            if f["top_result"]:
-                tr = f["top_result"]
-                print(f"  最佳：{tr['title'][:60]}")
-                print(f"  来源：{tr['source']} | 分数：{tr['score']}")
-            print()
 
-        if report["citations"]:
-            print("── 引用列表 ──")
-            for c in report["citations"]:
-                print(f"  {c['id']} {c['title'][:50]} ({c['source']})")
-            print()
-
-        if report.get("cross_references"):
-            print("── 交叉引用（多源佐证）──")
-            for cr in report["cross_references"]:
-                print(f"  「{cr['ngram'][:30]}」 ← {cr['source_count']} 个来源：{', '.join(cr['domains'][:3])}")
-            print()
-
-        if report["gaps"]:
-            print("── 知识缺口 ──")
-            for g in report["gaps"]:
-                print(f"  ⚠ {g}")
-            print()
+def _print_deep_report(report: dict):
+    """打印深度研究报告"""
 
 
 if __name__ == "__main__":

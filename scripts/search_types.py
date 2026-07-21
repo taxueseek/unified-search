@@ -28,6 +28,7 @@ class SearchResult:
     score: float = 0.5
     source: str = ""
     metadata: dict = field(default_factory=dict)
+    social_meta: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转为字典，省略空值/默认值字段。"""
@@ -42,6 +43,8 @@ class SearchResult:
             d["source"] = self.source
         if self.metadata:
             d["metadata"] = self.metadata
+        if self.social_meta:
+            d["social_meta"] = self.social_meta
         return d
 
 
@@ -69,4 +72,5 @@ def normalize_result(item: dict, engine: str, default_score: float = 0.5) -> Sea
         score=score,
         source=item.get("source", engine),
         metadata=item.get("metadata", {}),
+        social_meta=item.get("social_meta"),
     )

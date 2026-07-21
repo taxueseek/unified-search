@@ -195,16 +195,21 @@ domains:
   patterns:
   - (?i)(本地搜索|local search|零成本|free search)
   primary: local_search
-- desc: 通用搜索（兜底）
+- desc: 社交平台/UGC/舆论
   engines_combo:
-  - anysearch
-  - bocha
-  - brave
-  fallback: anysearch
-  name: general_search
+  - twitter
+  - reddit
+  - xiaohongshu
+  - bilibili
+  - weibo
+  fallback: reddit
+  name: social
   parallel: true
-  patterns: []
-  primary: anysearch
+  patterns:
+  - (?i)(小红书|抖音|推特|twitter|reddit|b站|bilibili|微博|v2ex|评论|帖子|热门|trending|viral|opinion|sentiment|舆论|舆情|种草|拔草|用户体验|口碑)
+  - (?i)(xhs|douyin|tweet|retweet|up主|博主|粉丝|点赞|转发|收藏)
+  primary: twitter
+  quote: false
 
 engines:
   local_search:
@@ -474,6 +479,68 @@ engines:
     type: http
     url: https://developer.zhihu.com/api/v1/content/zhihu_search
 
+  # ── 社交平台引擎 ────────────────────────────────────────────────────────────
+  twitter:
+    type: cli
+    enabled: true
+    cmd:
+    - python3
+    - ~/.claude/skills/argo/scripts/social_engines/twitter_engine.py
+    search_args:
+    - search
+    - '{query}'
+    - '-n'
+    - '{n}'
+    env: {}
+  reddit:
+    type: cli
+    enabled: true
+    cmd:
+    - python3
+    - ~/.claude/skills/argo/scripts/social_engines/reddit_engine.py
+    search_args:
+    - search
+    - '{query}'
+    - '-n'
+    - '{n}'
+    env: {}
+  xiaohongshu:
+    type: cli
+    enabled: true
+    cmd:
+    - python3
+    - ~/.claude/skills/argo/scripts/social_engines/xiaohongshu_engine.py
+    search_args:
+    - search
+    - '{query}'
+    - '-n'
+    - '{n}'
+    env: {}
+  bilibili:
+    type: cli
+    enabled: true
+    cmd:
+    - python3
+    - ~/.claude/skills/argo/scripts/social_engines/bilibili_engine.py
+    search_args:
+    - search
+    - '{query}'
+    - '-n'
+    - '{n}'
+    env: {}
+  weibo:
+    type: cli
+    enabled: true
+    cmd:
+    - python3
+    - ~/.claude/skills/argo/scripts/social_engines/weibo_engine.py
+    search_args:
+    - search
+    - '{query}'
+    - '-n'
+    - '{n}'
+    env: {}
+
 # 成本分级（用于成本感知路由）
 cost_tiers:
   free:
@@ -517,6 +584,11 @@ cost_tiers:
     - wikipedia
     - searxng
     - wolframalpha
+    - twitter
+    - reddit
+    - xiaohongshu
+    - bilibili
+    - weibo
   low:
     - bocha
     - metaso

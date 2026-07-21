@@ -2,8 +2,8 @@
 """
 mcp_server.py — Argo MCP 服务层
 
-将 research/evidence/clarify 三个工具暴露为 MCP tool，
-通过 JSON-RPC over stdio 与 Grok/Claude 等客户端通信。
+将 argo_search/argo_research/argo_evidence/argo_clarify/argo_crawl/argo_extract
+六个工具暴露为 MCP tool，通过 JSON-RPC over stdio 与 Grok/Claude/Kimi 等客户端通信。
 
 用法：
   python3 mcp_server.py                    # 启动 MCP stdio 服务
@@ -19,16 +19,37 @@ import traceback
 from typing import Any
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ARGO_DIR = os.path.dirname(SCRIPT_DIR)  # argo 根目录
 sys.path.insert(0, SCRIPT_DIR)
+# 子技能目录，供 sub-skills/local-search/ 等模块本地导入
+SUB_SKILLS_DIR = os.path.join(ARGO_DIR, "sub-skills")
+if os.path.isdir(SUB_SKILLS_DIR):
+    for sub in os.listdir(SUB_SKILLS_DIR):
+        sub_path = os.path.join(SUB_SKILLS_DIR, sub)
+        if os.path.isdir(sub_path) and sub_path not in sys.path:
+            sys.path.insert(0, sub_path)
+# 切换 CWD 到 argo 根目录，确保相对路径和子进程 work
+os.chdir(ARGO_DIR)
 
-# 进程级共享缓存：同一 MCP 会话中 search/evidence/research 共用
+# 启动日志（写入 stderr，不影响 stdio 通信）
+sys.stderr.write("[argo-mcp] starting (lazy imports enabled)\n")
+sys.stderr.flush()
+
+# 延迟导入：避免启动时加载所有模块导致超时，按需导入
+import importlib
+
+def _lazy_import(module_name: str):
+    """延迟导入模块，首次调用时加载。"""
+    return importlib.import_module(module_name)
+
 _cache_instance = None
+_response_format = "content-length"  # 根据客户端请求自动切换
 
 def _get_cache():
     global _cache_instance
     if _cache_instance is None:
-        from cache import SearchCache
-        _cache_instance = SearchCache()
+        cache = _lazy_import("cache")
+        _cache_instance = cache.SearchCache()
     return _cache_instance
 
 
@@ -219,17 +240,180 @@ TOOLS = [
             "required": ["url"]
         }
     },
+    {
+        "name": "argo_fetch",
+        "description": "智能页面抓取：HTTP 优先 + 反检测浏览器降级（Patchright/Cloudflare 绕过）。自动检测 CF 挑战/JS shell 并升级浏览器。支持 BM25 聚焦提取（focus 参数省 80%+ token）、页面交互（actions）、内容质量信号（content_ok/page_type/quality_score）。适用于反爬网站、JS 渲染页、Cloudflare 保护页。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "目标 URL"
+                },
+                "focus": {
+                    "type": "string",
+                    "description": "BM25 聚焦查询词（只返回相关段落，省 80%+ token）"
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "最大字符数（默认 8000）",
+                    "default": 8000,
+                    "minimum": 500,
+                    "maximum": 50000
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "超时秒数（默认 15）",
+                    "default": 15,
+                    "minimum": 5,
+                    "maximum": 60
+                },
+                "use_browser": {
+                    "type": "boolean",
+                    "description": "强制使用反检测浏览器（默认 false，HTTP 失败时自动升级）",
+                    "default": False
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "argo_screenshot",
+        "description": "页面截图：捕获网页为图片（PNG），供多模态 agent 分析页面布局、验证渲染结果、存档网页快照。支持全页截图和视口截图。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "目标 URL"
+                },
+                "full_page": {
+                    "type": "boolean",
+                    "description": "全页截图（默认 false，仅当前视口）",
+                    "default": False
+                },
+                "output_path": {
+                    "type": "string",
+                    "description": "输出路径（默认 /tmp/argo_screenshot_<timestamp>.png）"
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "argo_pdf",
+        "description": "PDF 结构化提取：将 PDF 转为 Markdown（含表格、目录、元数据、CID 损坏检测）。支持 URL 下载和本地文件路径。依赖 pdfplumber 或 PyMuPDF（自动选择）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "PDF URL 或本地文件路径"
+                },
+                "pages": {
+                    "type": "string",
+                    "description": "页码范围（如 \"1-5\" 或 \"1,3,5\"，默认全部）"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "加密 PDF 密码（可选）"
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    # ── 社交平台工具 ─────────────────────────────────────────────────────────
+    {
+        "name": "argo_social_search",
+        "description": "社交平台搜索：跨平台搜索 Twitter/X、Reddit、小红书、B站、微博等社交媒体内容。返回 UGC 帖子、评论、互动数据（点赞/转发/收藏）。适用于舆情分析、热门话题、用户讨论等场景。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索查询词"},
+                "platforms": {
+                    "type": "string",
+                    "description": "平台列表，逗号分隔（默认 twitter,reddit,xiaohongshu）。可选：twitter,reddit,xiaohongshu,bilibili,weibo",
+                    "default": "twitter,reddit,xiaohongshu"
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "每个平台最大结果数（默认 5）",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "argo_social_sentiment",
+        "description": "社交舆情分析：跨平台 UGC 情绪与讨论分析。聚合多平台帖子，输出互动数据汇总、高频话题、代表性内容。适用于产品口碑、事件舆情、竞品用户反馈等场景。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "研究查询"},
+                "platforms": {
+                    "type": "string",
+                    "description": "平台列表，逗号分隔（默认 twitter,reddit,xiaohongshu）",
+                    "default": "twitter,reddit,xiaohongshu"
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "每个平台最大结果数（默认 5）",
+                    "default": 5
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "argo_twitter_search",
+        "description": "Twitter/X 搜索：搜索推文、话题、用户。支持 nitter 公开实例（零认证）和 twitter CLI。返回推文内容、互动数据（点赞/转发/回复）、作者信息。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索查询词"},
+                "max_results": {"type": "integer", "description": "最大结果数（默认 5）", "default": 5}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "argo_reddit_search",
+        "description": "Reddit 搜索：搜索帖子、subreddit、评论。使用 Reddit JSON API（无需认证）。返回帖子标题、内容、点赞数、评论数、subreddit 信息。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索查询词"},
+                "max_results": {"type": "integer", "description": "最大结果数（默认 5）", "default": 5}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "argo_xiaohongshu_search",
+        "description": "小红书搜索：搜索笔记、话题、用户。需先通过 xhs login 登录。返回笔记标题、描述、点赞/收藏/评论数、作者信息。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索查询词"},
+                "max_results": {"type": "integer", "description": "最大结果数（默认 5）", "default": 5}
+            },
+            "required": ["query"]
+        }
+    },
 ]
 
 
-# ── 工具执行 ──────────────────────────────────────────────────────────────────
+# ── 工具执行（延迟导入）──────────────────────────────────────────────────────
 
 def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """执行 MCP 工具。"""
+    """执行 MCP 工具，按需导入模块。"""
     try:
         if name == "argo_search":
-            from search import super_search
-            result = super_search(
+            search_mod = _lazy_import("search")
+            result = search_mod.super_search(
                 query=arguments["query"],
                 engine=arguments.get("engine", "auto"),
                 n=arguments.get("max_results", 5),
@@ -239,7 +423,6 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                 mode=arguments.get("mode", "auto"),
                 cache=_get_cache(),
             )
-            # 精简模式：截断 snippet
             if arguments.get("summary", False):
                 for r in result.get("results", []):
                     if r.get("snippet"):
@@ -247,23 +430,75 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_research":
-            from research import deep_research
-            result = deep_research(
+            research_mod = _lazy_import("research")
+            mode = arguments.get("mode", "auto")
+            if mode == "social-sentiment":
+                platforms_str = arguments.get("platforms", "twitter,reddit,xiaohongshu")
+                platforms = [p.strip() for p in platforms_str.split(",")]
+                result = research_mod.social_sentiment_research(
+                    query=arguments["query"],
+                    platforms=platforms,
+                    max_results=arguments.get("max_results", 5),
+                )
+            else:
+                result = research_mod.deep_research(
+                    query=arguments["query"],
+                    num_sub_queries=arguments.get("num_sub_queries", 4),
+                    max_results=arguments.get("max_results", 5),
+                    depth=arguments.get("depth", "balanced"),
+                    mode=mode,
+                )
+            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_social_search":
+            search_mod = _lazy_import("search")
+            platforms_str = arguments.get("platforms", "twitter,reddit,xiaohongshu")
+            platforms = [p.strip() for p in platforms_str.split(",")]
+            all_results: list = []
+            engines_used: set = set()
+            for platform in platforms:
+                try:
+                    r = search_mod.super_search(
+                        query=arguments["query"], n=arguments.get("max_results", 5),
+                        engines=[platform], mode="fast"
+                    )
+                    all_results.extend(r.get("results", []))
+                    engines_used.update(r.get("engines_used", []))
+                except Exception:
+                    pass
+            return {"content": [{"type": "text", "text": json.dumps({"results": all_results, "engines_used": sorted(engines_used), "platforms": platforms}, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_social_sentiment":
+            research_mod = _lazy_import("research")
+            platforms_str = arguments.get("platforms", "twitter,reddit,xiaohongshu")
+            platforms = [p.strip() for p in platforms_str.split(",")]
+            result = research_mod.social_sentiment_research(
                 query=arguments["query"],
-                num_sub_queries=arguments.get("num_sub_queries", 4),
+                platforms=platforms,
                 max_results=arguments.get("max_results", 5),
-                depth=arguments.get("depth", "balanced"),
-                mode=arguments.get("mode", "auto"),
             )
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
 
+        elif name == "argo_twitter_search":
+            from social_engines.twitter_engine import search as twitter_search
+            results = twitter_search(arguments["query"], arguments.get("max_results", 5))
+            return {"content": [{"type": "text", "text": json.dumps({"results": results, "source": "twitter"}, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_reddit_search":
+            from social_engines.reddit_engine import search as reddit_search
+            results = reddit_search(arguments["query"], arguments.get("max_results", 5))
+            return {"content": [{"type": "text", "text": json.dumps({"results": results, "source": "reddit"}, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_xiaohongshu_search":
+            from social_engines.xiaohongshu_engine import search as xhs_search
+            results = xhs_search(arguments["query"], arguments.get("max_results", 5))
+            return {"content": [{"type": "text", "text": json.dumps({"results": results, "source": "xiaohongshu"}, ensure_ascii=False, indent=2)}]}
+
         elif name == "argo_evidence":
-            from evidence import compute_credibility
             results_json_str = arguments.get("results_json", "")
-            # results_json 为空时自动调用 super_search 获取结果
             if not results_json_str or not results_json_str.strip():
-                from search import super_search
-                search_result = super_search(
+                search_mod = _lazy_import("search")
+                search_result = search_mod.super_search(
                     query=arguments["query"],
                     n=arguments.get("max_results", 10),
                     depth="fast",
@@ -274,45 +509,91 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             else:
                 results_data = json.loads(results_json_str)
                 results = results_data.get("results", [])
-            result = compute_credibility(results, arguments["query"])
+            evidence_mod = _lazy_import("evidence")
+            result = evidence_mod.compute_credibility(results, arguments["query"])
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_clarify":
-            from clarify import analyze_query, recommend_routing
-            analysis = analyze_query(arguments["query"])
-            routing = recommend_routing(analysis)
+            clarify_mod = _lazy_import("clarify")
+            analysis = clarify_mod.analyze_query(arguments["query"])
+            routing = clarify_mod.recommend_routing(analysis)
             analysis["routing"] = routing
             return {"content": [{"type": "text", "text": json.dumps(analysis, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_crawl":
-            from crawl import crawl_bfs, crawl_sitemap
+            crawl_mod = _lazy_import("crawl")
             strategy = arguments.get("strategy", "bfs")
             max_pages = arguments.get("max_pages", 10)
             max_depth = arguments.get("max_depth", 2)
             timeout = arguments.get("timeout", 8)
             if strategy == "sitemap":
-                result = crawl_sitemap(arguments["url"], max_pages=max_pages, timeout=timeout)
+                result = crawl_mod.crawl_sitemap(arguments["url"], max_pages=max_pages, timeout=timeout)
             else:
-                result = crawl_bfs(arguments["url"], max_pages=max_pages, max_depth=max_depth, timeout=timeout)
+                result = crawl_mod.crawl_bfs(arguments["url"], max_pages=max_pages, max_depth=max_depth, timeout=timeout)
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_extract":
-            from extract import extract_tables, extract_metadata, extract_jsonld
-            from fetch import fetch_page
+            extract_mod = _lazy_import("extract")
+            fetch_mod = _lazy_import("fetch")
             mode = arguments.get("mode", "all")
-            fetch_result = fetch_page(arguments["url"], max_chars=50000, timeout=15, raw=True)
+            fetch_result = fetch_mod.fetch_page(arguments["url"], max_chars=50000, timeout=15, raw=True)
             if not fetch_result["success"]:
                 return {"content": [{"type": "text", "text": json.dumps({"error": fetch_result.get("error", "fetch failed")}, ensure_ascii=False)}], "isError": True}
             html = fetch_result["html"]
             output = {}
             if mode in ("tables", "all"):
-                output["tables"] = extract_tables(html)
+                output["tables"] = extract_mod.extract_tables(html)
             if mode in ("metadata", "all"):
-                output["metadata"] = extract_metadata(html)
+                output["metadata"] = extract_mod.extract_metadata(html)
             if mode in ("jsonld", "all"):
-                output["jsonld"] = extract_jsonld(html)
+                output["jsonld"] = extract_mod.extract_jsonld(html)
             output["url"] = fetch_result["url"]
             return {"content": [{"type": "text", "text": json.dumps(output, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_fetch":
+            fetch_v3_mod = _lazy_import("fetch_v3")
+            result = fetch_v3_mod.fetch_v3(
+                url=arguments["url"],
+                max_chars=arguments.get("max_chars", 8000),
+                timeout=arguments.get("timeout", 15),
+                use_browser_fallback=True,
+                force_browser=arguments.get("use_browser", False),
+                actions=json.loads(arguments["actions"]) if arguments.get("actions") else None,
+            )
+            # BM25 聚焦提取
+            focus_query = arguments.get("focus")
+            if focus_query and result.get("success"):
+                focus_mod = _lazy_import("focus_extract")
+                result["content"] = focus_mod.focus_extract(result["content"], focus_query)
+                result["length"] = len(result["content"])
+                result["focus_applied"] = True
+            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_screenshot":
+            import time as _time
+            output = arguments.get("output_path", f"/tmp/argo_screenshot_{int(_time.time())}.png")
+            full_page = arguments.get("full_page", False)
+            try:
+                cdp_mod = _lazy_import("chrome_cdp")
+                cdp = cdp_mod.ChromeCDP(auto_start=True)
+                cdp.navigate(arguments["url"])
+                path = cdp.screenshot(output, full_page=full_page)
+                cdp.stop()
+                if path and os.path.exists(path):
+                    return {"content": [{"type": "text", "text": json.dumps({"success": True, "screenshot": path, "url": arguments["url"]}, ensure_ascii=False)}]}
+                else:
+                    return {"content": [{"type": "text", "text": json.dumps({"success": False, "error": "screenshot failed"}, ensure_ascii=False)}], "isError": True}
+            except Exception as e:
+                return {"content": [{"type": "text", "text": json.dumps({"success": False, "error": str(e)[:200]}, ensure_ascii=False)}], "isError": True}
+
+        elif name == "argo_pdf":
+            pdf_mod = _lazy_import("pdf_extract")
+            result = pdf_mod.extract_pdf(
+                url_or_path=arguments["url"],
+                pages=arguments.get("pages"),
+                password=arguments.get("password"),
+            )
+            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
 
         else:
             return {"error": {"code": -32601, "message": f"Unknown tool: {name}"}}
@@ -330,13 +611,13 @@ def handle_rpc(method: str, params: dict[str, Any]) -> dict[str, Any]:
     """处理 JSON-RPC 请求。"""
     if method == "initialize":
         return {
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": "2025-06-18",
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {
                 "name": "argo",
                 "version": "1.0.1"
             },
-            "instructions": "Argo MCP 提供 6 个工具：argo_search（47 引擎统一搜索）、argo_research（深度研究）、argo_evidence（可信度评估）、argo_clarify（意图消歧）、argo_crawl（站点爬取）、argo_extract（结构化数据提取）。底层使用 47 个搜索引擎的统一搜索基础设施，支持 TF-IDF 语义路由、RRF 多引擎融合、Bocha 语义精排、双层缓存和成本感知预算控制。"
+            "instructions": "Argo MCP 提供 9 个工具：argo_search（47 引擎统一搜索）、argo_research（深度研究）、argo_evidence（可信度评估）、argo_clarify（意图消歧）、argo_crawl（站点爬取）、argo_extract（结构化数据提取）、argo_fetch（智能页面抓取+反检测浏览器降级）、argo_screenshot（页面截图）、argo_pdf（PDF 结构化提取）。底层使用 47 个搜索引擎的统一搜索基础设施，支持 TF-IDF 语义路由、RRF 多引擎融合、Bocha 语义精排、双层缓存和成本感知预算控制。新增 fetch 工具支持 HTTP→Patchright 浏览器自动降级、Cloudflare 绕过、BM25 聚焦提取、内容质量信号（content_ok/page_type/quality_score）。"
         }
 
     elif method == "tools/list":
@@ -361,30 +642,33 @@ def handle_rpc(method: str, params: dict[str, Any]) -> dict[str, Any]:
 def run_stdio():
     """运行 MCP stdio 服务。MCP 帧协议：Content-Length: N\\r\\n\\r\\n{json}"""
     import sys, os, time as _time
-    try:
-        with open(os.path.expanduser("~/.kimi/argo_diag.log"), "a") as _log:
-            _log.write(f"=== PID={os.getpid()} ENTER run_stdio {_time.strftime('%H:%M:%S')} ===\n")
-            _log.write(f"python={sys.executable} cwd={os.getcwd()}\n")
-            _log.flush()
-    except: pass
-    
+
+    global _response_format
+
+    sys.stderr.write("[argo-mcp] ready, waiting for stdin\n")
+    sys.stderr.flush()
+
     while True:
         try:
             # 读取 Content-Length 头
             header = sys.stdin.buffer.readline()
             if not header:
+                sys.stderr.write("[argo-mcp] EOF on stdin, exiting\n")
+                sys.stderr.flush()
                 break  # EOF
             header_str = header.decode("utf-8", errors="replace").strip()
             if not header_str:
                 continue
             if not header_str.startswith("Content-Length:"):
-                # 兼容行模式（某些客户端不发 Content-Length）
+                # NDJSON 格式（Kimix 等）
+                _response_format = "ndjson"
                 try:
                     request = json.loads(header_str)
                 except json.JSONDecodeError:
                     _send_error(None, -32700, "Parse error")
                     continue
             else:
+                _response_format = "content-length"
                 length = int(header_str.split(":")[1].strip())
                 sys.stdin.buffer.readline()  # skip blank line
                 body = sys.stdin.buffer.read(length).decode("utf-8")
@@ -401,9 +685,11 @@ def run_stdio():
                 continue
 
             if request_id is not None:
-                response["jsonrpc"] = "2.0"
-                response["id"] = request_id
-                _send_response(response)
+                _send_response({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": response
+                })
 
         except json.JSONDecodeError:
             _send_error(None, -32700, "Parse error")
@@ -412,12 +698,14 @@ def run_stdio():
 
 
 def _send_response(response: dict):
-    """发送 MCP 帧响应。"""
+    """发送 MCP 响应，根据客户端请求格式自动选择。"""
     data = json.dumps(response, ensure_ascii=False)
-    encoded = data.encode("utf-8")
-    sys.stdout.buffer.write(f"Content-Length: {len(encoded)}\r\n\r\n".encode())
-    sys.stdout.buffer.write(encoded)
-    sys.stdout.buffer.flush()
+    if _response_format == "ndjson":
+        sys.stdout.write(data + "\n")
+    else:
+        encoded = data.encode("utf-8")
+        sys.stdout.buffer.write(f"Content-Length: {len(encoded)}\r\n\r\n".encode() + encoded)
+    sys.stdout.flush()
 
 
 def _send_error(request_id, code: int, message: str):
@@ -428,9 +716,6 @@ def _send_error(request_id, code: int, message: str):
         "error": {"code": code, "message": message}
     }
     _send_response(resp)
-
-
-# ── 测试模式 ──────────────────────────────────────────────────────────────────
 
 def test_mode():
     """本地测试。"""
