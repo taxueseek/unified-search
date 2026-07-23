@@ -90,9 +90,9 @@
 
   <!-- Title -->
   <text x="400" y="170" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="white">
-    Unified Search
+    Argo 阿尔戈
   </text>
-  <text x="400" y="192" text-anchor="middle" font-family="monospace" font-size="11" fill="#94a3b8">
-    40 engines · TF-IDF routing · dual-layer cache · smart fallback
+  <text x="400" y="192" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#94a3b8">
+    统一搜索 · 证据核验 · 多引擎路由 · 双层缓存
   </text>
 </svg>

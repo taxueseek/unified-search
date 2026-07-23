@@ -20,7 +20,6 @@ engines:
   - eastmoney
   - byted
   - arxiv
-  - searxng
   - duckduckgo
   - uapi
   - semantic_scholar
