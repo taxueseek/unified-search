@@ -1,17 +1,20 @@
 ---
 name: argo
-description: Argo 阿尔戈 — 14工具MCP服务：argo_search（52引擎搜索）+ argo_research（深度研究+社交舆情）+ argo_evidence（可信度评估）+ argo_clarify（意图消歧）+ argo_crawl（站点爬取）+ argo_extract（结构化提取）+ argo_fetch（智能抓取+反检测浏览器降级）+ argo_screenshot（页面截图）+ argo_pdf（PDF结构化提取）+ argo_social_search（社交平台搜索）+ argo_social_sentiment（社交舆情分析）+ argo_twitter_search+ argo_reddit_search+ argo_xiaohongshu_search。TF-IDF路由 + 成本感知 + RRF融合 + Bocha reranker + 内容质量信号。
-version: 2.1.0
+description: Argo 阿尔戈 — 统一搜索与证据核验。核心不是「返回链接」，而是「最大化可被 Agent 吸收的可核验证据」。工具：argo_search + research + evidence（Selection×Absorption 两阶段）+ clarify + fetch/crawl/extract + 社交引擎。TF-IDF路由 + RRF + 证据密度 + SERP降权 + 中文信源表。
+version: 2.3.0
 triggers:
   - 搜索
   - 查一下
   - 搜一下
+  - 核实
+  - 查证
+  - 可信度
   - search for
   - look up
+  - fact check
 engines:
   - local_search
   - anysearch
-  - wigolo
   - tavily
   - zhihu
   - eastmoney
@@ -35,20 +38,76 @@ engines:
   - xiaohongshu
   - bilibili
   - weibo
+  - exa
+  - wechat_sogou
+  - hackernews
+  - stackoverflow
+  - google_scholar
+  - v2ex
+  - ths_hot
+  - cls_telegraph
+  - em_global_news
 ---
 
-## Argo v2.1.0
+## Argo v2.3.0
 
-统一搜索入口 v2，替代零散的搜索命令。核心设计：
+### 问题重定义（第一性原理）
+
+| 旧问题（错误） | 新问题（正确） |
+|---|---|
+| 怎么返回更多搜索结果？ | 怎么让 Agent **吸收到可核验的证据**？ |
+| 域名权威高 = 可信 | 权威只是 **Selection 门槛**；还要 **Absorption 证据密度** |
+| 被引用/被搜到 = 事实 | 被检索到 ≠ 进入答案；口径未对齐前禁止合并数字 |
+| 单次泛查询够用 | 事实核查需要 **分层查询**（来源要求 / 对比 / 时间 / 主体） |
+
+**一句话**：Argo 的产出是「证据候选 + 可信度分解」，不是「链接清单」。
+
+### MECE 证据流水线
+
+```
+Query
+  ├─ Clarify（意图是否可执行）
+  ├─ Search Selection（引擎召回 + 域名权威 + SERP 剔除）
+  ├─ Absorption（数字/定义/对比/披露密度；fetch 后 quality）
+  ├─ Freshness（发布年；忽略「2015年以来」历史对比年）
+  └─ Consensus（多可吸收域名佐证；社交仅叙事）
+```
+
+四块互不重叠、合起来覆盖「能不能用这条结果」。
+
+### 量化公式（evidence v2.2）
+
+```
+selection  = authority_score（SERP/跳转链 ≤ 0.15）
+absorption = evidence_density（has_numbers/definition/comparison/howto/disclose − qa）
+freshness  = 发布年/URL年/完整日期
+final      = 0.40·selection + 0.35·absorption + 0.15·freshness + 0.10·engine_score
+```
+
+搜索结果内嵌快评字段：`selection` / `absorption` / `credibility_fast` / `evidence_flags`。
+完整交叉验证：`python3 scripts/evidence.py --stdin --json`。
+
+### Agent 执行纪律
+
+1. **高后果问题**：search → evidence（或看 `credibility_fast`）→ fetch 高分 URL → 再下结论  
+2. **数字**：必须标注口径（全市场/主动/持仓市值 vs 占比）；冲突时并列  
+3. **SERP 链**（baidu/s、sogou/link）：禁止当正文来源  
+4. **社交帖**：叙事/舆情，不进事实真值  
+5. **分层查询**：事实类 deep 至少 2–3 条子查询（来源 / 对比数据 / 关键主体）
+
+### 能力清单
 
 - **TF-IDF 语义路由**：二元组 + boost_keywords + boost_combos，< 5ms 延迟
-- **成本感知评分**：free=1.0 / low=0.7 / paid=0.3 三档 cost_factor
+- **Exa 语义搜索引擎**：embedding 匹配 + 内容摘要，中英文开放式调研首选（v2.3 新增）
+- **搜狗微信搜索引擎**：weixin.sogou.com 公众号文章搜索，无需登录（v2.3 新增）
+- **成本感知评分**：free=1.0 / low=0.7 / api=0.5 / paid=0.3 四档 cost_factor
 - **预算模式**：fast / auto / deep / budget 四档配额追踪 + 自动降级
 - **渐进式多源**：engines_combo 先快后全 + 并行模式
 - **AnySearch 垂直域**：19 个垂直域结构化搜索，匿名兜底
 - **双层缓存**：L1 LRU + L2 SQLite + gzip，分级 TTL
 - **RRF 融合**：多引擎 Reciprocal Rank Fusion 去重合并
 - **Bocha Reranker**：语义精排后处理
+- **Selection×Absorption**：SERP 降权 + 证据密度 + 中文信源表（v2.2）
 - **自适应学习**：success × latency × cost 三维评分，SQLite 持久化
 - **社交引擎**：Twitter/Reddit/小红书/B站/微博 5 大平台原生搜索
 
@@ -71,6 +130,12 @@ python3 scripts/search.py "查询词" --engine arxiv
 python3 scripts/search.py "查询词" --engine eastmoney
 python3 scripts/search.py "查询词" --engine zhihu
 python3 scripts/search.py "查询词" --engine bocha
+python3 scripts/search.py "查询词" --engine exa
+python3 scripts/search.py "查询词" --engine wechat_sogou
+python3 scripts/search.py "查询词" --engine hackernews
+python3 scripts/search.py "查询词" --engine stackoverflow
+python3 scripts/search.py "查询词" --engine google_scholar
+python3 scripts/search.py "查询词" --engine v2ex
 
 # 本地零成本优先（local_search 聚合）
 python3 scripts/search.py "查询词" --local-first
@@ -107,7 +172,7 @@ python3 scripts/clarify.py "Python 吞苹果 兼容吗" --explain
 python3 scripts/clarify.py "苹果股价" --json
 ```
 
-### 引擎全景（22 个引擎 + Reranker）
+### 引擎全景（28 个引擎 + Reranker）
 
 | 引擎 | cost_tier | 特点 | 延迟 |
 |------|-----------|------|------|
@@ -115,7 +180,6 @@ python3 scripts/clarify.py "苹果股价" --json
 | zhihu | free | 知乎观点 | ~700ms |
 | eastmoney | free | 金融数据 | ~400ms |
 | arxiv | free | 学术论文 | ~1s |
-| wigolo | free | 本地语义搜索 | ~800ms |
 | duckduckgo | free | 快速事实 | ~500ms |
 | uapi | free | 中文网页 | ~800ms |
 | semantic_scholar | free | 学术+引用 | ~1s |
@@ -131,7 +195,65 @@ python3 scripts/clarify.py "苹果股价" --json
 | brave | low | 隐私搜索 | ~1s |
 | tavily | paid | 国际搜索 | ~2s |
 | felo | paid | AI综合答案 | ~3s |
+| exa | api | 语义搜索(embedding+内容摘要) | ~6s |
+| wechat_sogou | free | 搜狗微信搜索(公众号文章) | ~2s |
+| hackernews | free | Hacker News(科技新闻+讨论) | ~2s |
+| stackoverflow | free | Stack Overflow(编程问答) | ~2s |
+| google_scholar | free | Google Scholar(学术论文) | ~3s |
+| v2ex | free | V2EX(中文技术社区) | ~2s |
+| ths_hot | free | 同花顺热点(强势股+题材归因) | ~2s |
+| cls_telegraph | free | 财联社电报(实时财经快讯) | ~2s |
+| em_global_news | free | 东财全球资讯(7×24快讯) | ~2s |
 | **Bocha Reranker** | low | 语义精排（后处理） | ~500ms |
+
+### Exa 语义搜索引擎（v2.3 新增）
+
+Exa 是基于向量 embedding 的语义搜索引擎，核心能力：
+- **语义匹配**：不使用关键词，而是理解查询意图，在 embedding 空间中找到最相关的页面
+- **内容摘要**：每条结果自带 `text` 字段（页面正文摘要），减少 fetch 环节
+- **中英文均可**：中文搜索质量超预期（embedding 模型对中文友好）
+
+**免费额度**：1000 次/月，超出后需升级付费计划。
+
+### 搜狗微信搜索引擎（v2.3 新增）
+
+通过搜狗微信搜索（weixin.sogou.com）直接抓取公众号文章，无需登录、无需 API key。
+返回字段：`title`、`url`、`snippet`、`account`（公众号名）
+
+### Hacker News 搜索（v2.3 新增）
+
+通过 Algolia API 搜索 Hacker News，覆盖科技新闻和讨论。
+返回字段：`title`、`url`、`snippet`（score/comments/author）
+
+### Stack Overflow 搜索（v2.3 新增）
+
+通过 Stack Exchange API 搜索编程问答，覆盖技术问题和解决方案。
+返回字段：`title`、`url`、`snippet`（score/answers/tags）
+
+### Google Scholar 搜索（v2.3 新增）
+
+通过 HTTP 页面解析搜索 Google Scholar，覆盖学术论文。
+返回字段：`title`、`url`、`snippet`（论文摘要）
+
+### V2EX 社区搜索（v2.3 新增）
+
+搜索 V2EX 中文技术社区讨论。
+返回字段：`title`、`url`、`snippet`
+
+```bash
+# 强制使用某个引擎
+python3 scripts/search.py "查询" --engine hackernews
+python3 scripts/search.py "查询" --engine stackoverflow
+python3 scripts/search.py "查询" --engine google_scholar
+python3 scripts/search.py "查询" --engine v2ex
+
+python3 scripts/search.py "查询词" --engine v2ex
+python3 scripts/search.py "查询词" --engine ths_hot
+python3 scripts/search.py "查询词" --engine cls_telegraph
+python3 scripts/search.py "查询词" --engine em_global_news
+
+# 查看配额
+python3 scripts/quota.py stats
 
 ### 社交平台引擎（v2.1 新增）
 
@@ -168,14 +290,24 @@ python3 scripts/research.py "查询" --json
 
 输出包含：`key_findings`（按子查询分组的关键发现）、`citations`（引用列表）、`gaps`（知识缺口）、`source_distribution`（来源统计）。
 
-#### evidence — 可信度评估
+#### evidence — 可信度评估（v2.2 Selection×Absorption）
 
 ```bash
 # 对搜索结果进行可信度评分
 echo '{"results": [...]}' | python3 scripts/evidence.py "查询词" --stdin --json
+
+# 高后果模式（共识微调）
+echo '{"results": [...]}' | python3 scripts/evidence.py "查询词" --stdin --json --high-stakes
 ```
 
-输出包含：每个结果的 `credibility.final`（综合分）、`authority`（权威性分解）、`freshness`（时效性分解）、`cross_validation`（交叉验证等级）。
+输出包含：
+- `credibility.final` / `selection` / `absorption`
+- `authority`（含 `is_serp`）
+- `freshness`（忽略「YYYY年以来」历史对比年）
+- `evidence_density`（has_numbers / has_comparison / …）
+- `cross_validation`（可吸收域名数）
+
+中文信源覆盖与降权表：`backends/source_types_cn.json`。
 
 #### clarify — 意图消歧
 
@@ -200,7 +332,7 @@ python3 scripts/research.py "AI Agent 产品口碑" --mode social-sentiment --js
 
 ### MCP 服务
 
-十个工具同时暴露为 MCP server（JSON-RPC over stdio），可被 Grok/Claude/Kimi 等客户端直接调用：
+十六个工具同时暴露为 MCP server（JSON-RPC over stdio），可被 Grok/Claude/Kimi 等客户端直接调用：
 
 ```bash
 # 启动 MCP 服务
@@ -210,7 +342,7 @@ python3 scripts/mcp_server.py
 python3 scripts/mcp_server.py --test
 ```
 
-MCP 工具名：`argo_search`、`argo_research`（含 social-sentiment 模式）、`argo_evidence`、`argo_clarify`、`argo_crawl`、`argo_extract`、`argo_fetch`、`argo_screenshot`、`argo_pdf`、`argo_social_search`、`argo_social_sentiment`、`argo_twitter_search`、`argo_reddit_search`、`argo_xiaohongshu_search`。
+MCP 工具名：`argo_search`、`argo_research`（含 social-sentiment 模式）、`argo_evidence`、`argo_clarify`、`argo_crawl`、`argo_extract`、`argo_fetch`、`argo_screenshot`、`argo_pdf`、`argo_social_search`、`argo_social_sentiment`、`argo_twitter_search`、`argo_reddit_search`、`argo_xiaohongshu_search`、`argo_bilibili_search`、`argo_weibo_search`。
 
 ### 成本感知路由公式
 
@@ -218,8 +350,9 @@ MCP 工具名：`argo_search`、`argo_research`（含 social-sentiment 模式）
 score = quality × cost_factor
 
 cost_factor:
-  free  = 1.0   (anysearch/zhihu/eastmoney/arxiv/wigolo/duckduckgo/uapi/...)
+  free  = 1.0   (anysearch/zhihu/eastmoney/arxiv/duckduckgo/uapi/...)
   low   = 0.7   (bocha/metaso/byted/brave)
+  api   = 0.5   (exa — 有限额度的免费引擎)
   paid  = 0.3   (tavily/felo)
 ```
 
@@ -347,9 +480,9 @@ argo pdf "https://example.com/paper.pdf" --pages "1-5"
 argo pdf "/local/file.pdf" --password "secret"
 ```
 
-### 内容质量信号系统（v2.0 新增）
+### 内容质量信号系统（v2.2 增强）
 
-所有抓取结果自动附带质量信号：
+所有抓取结果自动附带质量信号；搜索快评另附 `credibility_fast`：
 
 | 信号 | 类型 | 说明 |
 |------|------|------|
@@ -359,7 +492,10 @@ argo pdf "/local/file.pdf" --password "secret"
 | `is_official` | bool | 是否官方来源（.gov/.edu/github/厂商docs） |
 | `is_stale` | bool | 是否过期（> 365 天） |
 | `content_age_days` | int | 内容年龄（天） |
-| `quality_score` | float | 0-1 综合质量评分 |
+| `quality_score` | float | 0-1（长度 0.2 + 密度 0.2 + 结构 0.2 + **证据密度 0.3** + 标题 0.1） |
+| `has_numbers` / `has_definition` / `has_comparison` / `has_howto` | bool | 证据块（GEO 吸收信号） |
+| `absorption_score` | float | 证据密度综合分 |
+| `selection` / `credibility_fast` | float | 搜索结果内嵌两阶段快评 |
 
 ### 输出 JSON Schema
 

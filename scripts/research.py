@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-research.py — 深度研究工具（wigolo research 理念移植 + 社交舆情模式）
+research.py — 深度研究工具（含社交舆情模式）
 
 核心能力：
   1. 问题分解：将复杂查询拆分为 3-5 个子查询
@@ -467,7 +467,7 @@ def social_sentiment_research(query: str, platforms: list[str] | None = None,
 
     # 互动数据聚合
     engagement_totals = {"likes": 0, "comments": 0, "shares": 0, "views": 0}
-    top_topics: dict[str, int] = {}
+    titles: list[str] = []
 
     for r in all_results:
         meta = r.get("social_meta", {})
@@ -476,13 +476,13 @@ def social_sentiment_research(query: str, platforms: list[str] | None = None,
             engagement_totals["comments"] += meta.get("comments", meta.get("num_comments", 0))
             engagement_totals["shares"] += meta.get("shares", meta.get("retweets", meta.get("reposts_count", 0)))
             engagement_totals["views"] += meta.get("views", meta.get("play_count", 0))
-        # 简单话题提取
+        # 收集标题用于话题提取
         title = r.get("title", "")
-        for word in title.split():
-            if len(word) > 2:
-                top_topics[word] = top_topics.get(word, 0) + 1
+        if title:
+            titles.append(title)
 
-    top_topics_sorted = sorted(top_topics.items(), key=lambda x: x[1], reverse=True)[:10]
+    # 中英文兼容的话题提取
+    top_topics_list = _extract_topics(titles, top_k=10)
     elapsed = int((time.time() - t0) * 1000)
 
     return {
@@ -492,7 +492,7 @@ def social_sentiment_research(query: str, platforms: list[str] | None = None,
         "total_posts": len(all_results),
         "platform_breakdown": {p: len(r) for p, r in platform_results.items()},
         "engagement_totals": engagement_totals,
-        "top_topics": [{"topic": t, "mentions": c} for t, c in top_topics_sorted],
+        "top_topics": top_topics_list,
         "cross_platform_posts": [
             {
                 "platform": r.get("source", ""),
@@ -577,7 +577,117 @@ def _print_social_report(report: dict):
 
 
 def _print_deep_report(report: dict):
-    """打印深度研究报告"""
+    """打印深度研究报告（人类可读格式）"""
+    elapsed_s = report.get("elapsed_ms", 0) / 1000
+    sub_count = report.get("sub_query_count", len(report.get("sub_findings", [])))
+    total_sources = report.get("total_sources", 0)
+    citations_count = len(report.get("citations", []))
+
+    print(f"\n{'='*60}")
+    print("=== 深度研究报告 ===")
+    print(f"{'='*60}")
+    print(f"查询：{report.get('query', '')}")
+    if report.get("rewritten_query"):
+        rq = report["rewritten_query"]
+        print(f"改写：{rq.get('original', '')} → {rq.get('rewritten', '')}（置信度 {rq.get('confidence', 0):.2f}）")
+    print(f"子查询：{sub_count} 个 | 来源：{total_sources} 个 | 引用：{citations_count} 个 | 耗时：{elapsed_s:.1f}s")
+    print()
+
+    # 关键发现
+    print("## 关键发现")
+    print()
+    for i, kf in enumerate(report.get("key_findings", []), 1):
+        aspect = kf.get("aspect", kf.get("sub_query", ""))
+        print(f"### [{i}] {aspect}")
+        top = kf.get("top_result", {})
+        if top:
+            print(f"  {top.get('title', '')}")
+            print(f"  来源：{top.get('url', '')}")
+            snippet = top.get("snippet", "")
+            if snippet:
+                print(f"  {snippet[:200]}")
+        findings = kf.get("findings", [])
+        if findings:
+            for f in findings:
+                src = f.get("url", f.get("source", ""))
+                title = f.get("title", "")
+                print(f"  - {title}（来源：{src}）")
+        print(f"  （本报告共 {kf.get('result_count', 0)} 条结果）")
+        print()
+
+    # 引用
+    citations = report.get("citations", [])
+    if citations:
+        print(f"## 引用（{len(citations)}）")
+        for c in citations:
+            print(f"  {c.get('id', '')} {c.get('title', '')} - {c.get('url', '')}")
+        print()
+
+    # 知识缺口
+    gaps = report.get("gaps", [])
+    if gaps:
+        print("## 知识缺口")
+        for g in gaps:
+            print(f"  - {g}")
+        print()
+
+    # 交叉引用
+    cross_refs = report.get("cross_references", [])
+    if cross_refs:
+        print("## 交叉验证")
+        for cr in cross_refs[:5]:
+            print(f"  - 「{cr.get('ngram', '')}」被 {cr.get('source_count', 0)} 个来源佐证：{', '.join(cr.get('domains', [])[:5])}")
+        print()
+
+    # 来源分布
+    source_dist = report.get("source_distribution", {})
+    if source_dist:
+        print("## 来源分布")
+        for src, cnt in sorted(source_dist.items(), key=lambda x: x[1], reverse=True):
+            print(f"  - {src}: {cnt}")
+        print()
+
+    # 引擎
+    engines = report.get("engines_used", [])
+    if engines:
+        print(f"使用引擎：{', '.join(engines)}")
+        print()
+
+
+def _extract_topics(titles: list[str], top_k: int = 10) -> list[dict]:
+    """从标题列表提取话题（中英文兼容）。
+
+    英文用 split() 分词，中文用字符级 bigram。
+    过滤单字停用词，返回 top_k 个话题。
+    """
+    import re
+    from collections import Counter
+
+    chinese_stopwords = set(
+        '的了是在和我你她他它这就也不很但而或如果因为所以而且或者虽然但是可以应该需要已经正在'
+        '之前之后时候地方问题工作生活东西事情时间今天昨天明天今年去年明年个些吗呢啊吧哦嗯哈'
+        '呀嘛哪谁什么怎么多少几样种类下上里中后前时来回过开给让把被对从向比跟和与及当比'
+        '如例包括相关关于根据通过进行使用作为成为具有属于位于来自获得达到实现完成产生形成'
+        '存在发生发展提供包含涉及适用于'
+    )
+
+    topic_counter = Counter()
+
+    for title in titles:
+        # 英文分词（仅保留长度 >= 3 的词）
+        en_words = re.findall(r'[a-zA-Z]{2,}', title.lower())
+        for w in en_words:
+            if len(w) >= 3:
+                topic_counter[w] += 1
+
+        # 中文 bigram（连续 2 个中文字符）
+        chinese_chars = re.findall(r'[一-鿿]', title)
+        for i in range(len(chinese_chars) - 1):
+            bigram = chinese_chars[i] + chinese_chars[i + 1]
+            if bigram[0] not in chinese_stopwords and bigram[1] not in chinese_stopwords:
+                topic_counter[bigram] += 1
+
+    return [{"topic": t, "mentions": c} for t, c in topic_counter.most_common(top_k)]
 
 
 if __name__ == "__main__":

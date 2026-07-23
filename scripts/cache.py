@@ -62,6 +62,13 @@ DOMAIN_TIER_MAP = {
     "tech_deep": "research",
     "news_realtime": "realtime",
     "general_search": "general",
+    "social": "general",
+    "local_chinese": "general",
+    "local_news": "news",
+    "local_academic": "research",
+    "local_code": "research",
+    "local_reference": "evergreen",
+    "local_general": "general",
     "stock": "financial",
     "fund": "financial",
     "news": "realtime",
@@ -290,9 +297,10 @@ class SearchCache:
         self._l2 = SQLiteCache(db_path=self._db_path, ttl=self._ttl)
 
     @staticmethod
-    def _key(query: str, engine: str, max_results: int, domain: str = "general") -> str:
-        """生成缓存键，包含 domain 防止跨域缓存污染。"""
-        raw = f"{query}|{engine}|{max_results}|{domain}"
+    def _key(query: str, engine: str, max_results: int, domain: str = "general",
+             mode: str = "auto") -> str:
+        """生成缓存键，包含 domain + mode 防止跨域和跨预算模式缓存污染。"""
+        raw = f"{query}|{engine}|{max_results}|{domain}|{mode}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
     @staticmethod
@@ -313,24 +321,25 @@ class SearchCache:
         """解析有效 TTL：非时效性域在当天内延长缓存至日末。
 
         策略：
-          - 时效性域（financial/news/realtime）：保持短 TTL，确保数据新鲜度
-          - 非时效性域（general/research/evergreen）：当天内延长至日末，
-            避免同一天内重复查询重复拉取
+          - base_ttl 显式传入时，信任调用者的意图（如 ttl=0 强制过期）
+          - base_ttl 为 None（使用默认 TTL）时，非时效性域延长至日末，
+            确保当天内相同查询命中缓存，避免重复拉取
         """
         tier = DOMAIN_TIER_MAP.get(domain, "general")
         ttl = base_ttl if base_ttl is not None else self.resolve_ttl(domain)
-        if tier in SAME_DAY_ELIGIBLE_TIERS:
-            return min(ttl, self._seconds_until_end_of_day())
+        if tier in SAME_DAY_ELIGIBLE_TIERS and base_ttl is None:
+            return max(ttl, self._seconds_until_end_of_day())
         return ttl
 
     def get(self, query: str, engine: str, max_results: int,
-            domain: str = "general") -> Optional[dict]:
-        """先查 L1，未命中再查 L2。"""
-        key = self._key(query, engine, max_results, domain)
+            domain: str = "general", mode: str = "auto") -> Optional[dict]:
+        """先查 L1，未命中再查 L2。缓存键含 mode 防跨预算模式污染。"""
+        key = self._key(query, engine, max_results, domain, mode)
         hit = self._l1.get(key)
         if hit is not None:
-            ttl = hit.get("_ttl", self._resolve_effective_ttl(domain))
-            if time.time() - hit.get("_ts", 0) < ttl:
+            # L1 层做简单的 TTL 检查：显式 ttl=0 或已过期则跳过
+            ttl = hit.get("_ttl", 0)
+            if ttl > 0 and time.time() - hit.get("_ts", 0) < ttl:
                 hit["_cache_level"] = "L1"
                 return hit
             self._l1.remove(key)
@@ -343,9 +352,9 @@ class SearchCache:
         return None
 
     def set(self, query: str, engine: str, max_results: int, results: dict,
-            domain: str = "general", ttl: int | None = None):
-        """写入双层缓存。"""
-        key = self._key(query, engine, max_results, domain)
+            domain: str = "general", ttl: int | None = None, mode: str = "auto"):
+        """写入双层缓存，含 mode 维度防跨预算模式污染。"""
+        key = self._key(query, engine, max_results, domain, mode)
         effective_ttl = self._resolve_effective_ttl(domain, ttl)
         value = {**results, "_domain": domain, "_ttl": effective_ttl, "_ts": time.time()}
         self._l1.set(key, value)

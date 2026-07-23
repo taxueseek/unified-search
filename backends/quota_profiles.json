@@ -311,16 +311,6 @@
     "cost_tier": "paid",
     "priority": 5
   },
-  "wigolo": {
-    "label": "Wigolo本地搜索",
-    "qps": 10,
-    "limit": null,
-    "period": "second",
-    "cost_per_call": 0.0,
-    "cost_unit": "free",
-    "cost_tier": "free",
-    "priority": 6
-  },
   "arxiv": {
     "label": "arXiv学术论文",
     "qps": 1,
@@ -391,5 +381,96 @@
     "cost_unit": "free",
     "cost_tier": "free",
     "priority": 13
+  },
+  "exa": {
+    "label": "Exa语义搜索",
+    "qps": 1,
+    "limit": 1000,
+    "period": "month",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "credits_per_search": 1,
+    "cost_tier": "api",
+    "priority": 14
+  },
+  "wechat_sogou": {
+    "label": "搜狗微信搜索",
+    "qps": 3,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 15
+  },
+  "hackernews": {
+    "label": "HackerNews",
+    "qps": 5,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 16
+  },
+  "stackoverflow": {
+    "label": "StackOverflow",
+    "qps": 3,
+    "limit": 300,
+    "period": "day",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 17
+  },
+  "google_scholar": {
+    "label": "GoogleScholar",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 18
+  },
+  "v2ex": {
+    "label": "V2EX",
+    "qps": 3,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 19
+  },
+  "ths_hot": {
+    "label": "同花顺热点",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 20
+  },
+  "cls_telegraph": {
+    "label": "财联社电报",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 21
+  },
+  "em_global_news": {
+    "label": "东财全球资讯",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 22
   }
 }

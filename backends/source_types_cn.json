@@ -1,0 +1,55 @@
+{
+  "_doc": "中文信源分类与默认权威分（MECE：按生产者角色，不按域名后缀 alone）。GEO/CN-GEO 启发：榜单/加盟站高引用≠高可信。",
+  "version": "1.0.0",
+  "authority_overrides": {
+    "cs.com.cn": 0.92,
+    "stcn.com": 0.88,
+    "cls.cn": 0.88,
+    "api3.cls.cn": 0.85,
+    "wallstreetcn.com": 0.86,
+    "yicai.com": 0.86,
+    "caixin.com": 0.9,
+    "cnr.cn": 0.9,
+    "finance.cnr.cn": 0.9,
+    "xinhuanet.com": 0.95,
+    "people.com.cn": 0.95,
+    "10jqka.com.cn": 0.78,
+    "hexun.com": 0.7,
+    "jiemian.com": 0.8,
+    "thepaper.cn": 0.82,
+    "nbd.com.cn": 0.8,
+    "eeo.com.cn": 0.8,
+    "ssap.com.cn": 0.75
+  },
+  "demote_domains": {
+    "maigoo.com": {"score": 0.28, "class": "commercial_recommendation", "reason": "商业品牌榜单"},
+    "chinapp.com": {"score": 0.28, "class": "commercial_recommendation", "reason": "加盟/品牌网"},
+    "cnpp.cn": {"score": 0.28, "class": "commercial_recommendation", "reason": "十大品牌网类"},
+    "canyin88.com": {"score": 0.35, "class": "commercial_recommendation", "reason": "行业加盟倾向"},
+    "xiuxianshipin.com": {"score": 0.3, "class": "commercial_recommendation", "reason": "加盟内容"}
+  },
+  "serp_host_markers": [
+    "baidu.com",
+    "sogou.com",
+    "so.com",
+    "bing.com",
+    "google.com",
+    "google.com.hk"
+  ],
+  "serp_url_patterns": [
+    "/s?",
+    "/link?",
+    "/search?",
+    "baidu.com/link",
+    "sogou.com/link",
+    "google.com/url?"
+  ],
+  "social_narrative_only": {
+    "x.com": 0.45,
+    "twitter.com": 0.45,
+    "weibo.com": 0.4,
+    "xiaohongshu.com": 0.4,
+    "bilibili.com": 0.45,
+    "guba.eastmoney.com": 0.35
+  }
+}

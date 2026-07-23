@@ -91,20 +91,6 @@
       "评测": 1.3, "对比": 1.3, "推荐": 1.2
     }
   },
-  "wigolo": {
-    "label": "Wigolo本地搜索",
-    "documents": [
-      "local search semantic retrieval knowledge base",
-      "cached results ML reranked hybrid discovery",
-      "English technical documentation library framework",
-      "research papers academic deep dive analysis",
-      "code documentation API reference implementation"
-    ],
-    "boost_keywords": {
-      "local": 1.5, "cached": 1.5, "semantic": 1.5,
-      "documentation": 1.5, "reference": 1.5, "implementation": 1.5
-    }
-  },
   "byted": {
     "label": "字节搜索",
     "documents": [

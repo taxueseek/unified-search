@@ -31,8 +31,11 @@ from typing import Any
 # 将 unified-search/scripts 加入路径，以复用 cache.py
 SKILL_DIR = Path(__file__).resolve().parent
 UNIFIED_SCRIPT_DIR = SKILL_DIR.parent.parent / "scripts"
+# 确保当前目录优先于 scripts 目录，避免 health_check 等同名模块冲突
+if str(SKILL_DIR) not in sys.path:
+    sys.path.insert(0, str(SKILL_DIR))
 if UNIFIED_SCRIPT_DIR.exists() and str(UNIFIED_SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(UNIFIED_SCRIPT_DIR))
+    sys.path.insert(1, str(UNIFIED_SCRIPT_DIR))
 
 try:
     from cache import SearchCache

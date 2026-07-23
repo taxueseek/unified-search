@@ -68,7 +68,7 @@ TOOLS = [
                 },
                 "engine": {
                     "type": "string",
-                    "description": "指定搜索引擎（默认 auto，可选 anysearch/zhihu/eastmoney/arxiv/wigolo/duckduckgo/byted/bocha/tavily/github/wikipedia/semantic_scholar/local_search 等）",
+                    "description": "指定搜索引擎（默认 auto，可选 anysearch/zhihu/eastmoney/arxiv/duckduckgo/byted/bocha/tavily/github/wikipedia/semantic_scholar/local_search 等）",
                     "default": "auto"
                 },
                 "max_results": {
@@ -403,6 +403,30 @@ TOOLS = [
             "required": ["query"]
         }
     },
+    {
+        "name": "argo_bilibili_search",
+        "description": "B站搜索：搜索视频、UP主、弹幕。使用 B站公开搜索 API（无需认证）。返回视频标题、描述、播放量、弹幕数、点赞数、UP主信息。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索查询词"},
+                "max_results": {"type": "integer", "description": "最大结果数（默认 5）", "default": 5}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "argo_weibo_search",
+        "description": "微博搜索：搜索帖子、话题、热门内容。使用微博公开搜索 API（无需认证）。返回帖子内容、点赞/转发/评论数、作者信息。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索查询词"},
+                "max_results": {"type": "integer", "description": "最大结果数（默认 5）", "default": 5}
+            },
+            "required": ["query"]
+        }
+    },
 ]
 
 
@@ -451,33 +475,76 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_social_search":
-            search_mod = _lazy_import("search")
+            # 直接调用社交引擎，不走 engine_registry（社交引擎未注册到主引擎层）
             platforms_str = arguments.get("platforms", "twitter,reddit,xiaohongshu")
             platforms = [p.strip() for p in platforms_str.split(",")]
+            query = arguments["query"]
+            n = arguments.get("max_results", 5)
             all_results: list = []
-            engines_used: set = set()
+            errors: list = []
+            engines_used: list = []
             for platform in platforms:
+                module_name = platform.replace("-", "_") + "_engine"
                 try:
-                    r = search_mod.super_search(
-                        query=arguments["query"], n=arguments.get("max_results", 5),
-                        engines=[platform], mode="fast"
-                    )
-                    all_results.extend(r.get("results", []))
-                    engines_used.update(r.get("engines_used", []))
-                except Exception:
-                    pass
-            return {"content": [{"type": "text", "text": json.dumps({"results": all_results, "engines_used": sorted(engines_used), "platforms": platforms}, ensure_ascii=False, indent=2)}]}
+                    mod = importlib.import_module(f"social_engines.{module_name}")
+                    results = mod.search(query, n=n)
+                    all_results.extend(results)
+                    engines_used.append(platform)
+                except ImportError:
+                    errors.append(f"Platform {platform} not available (module social_engines.{module_name})")
+                except Exception as e:
+                    errors.append(f"{platform}: {str(e)[:100]}")
+            output = {
+                "query": query,
+                "platforms": platforms,
+                "results": all_results,
+                "count": len(all_results),
+                "engines_used": engines_used,
+            }
+            if errors:
+                output["errors"] = errors
+            return {"content": [{"type": "text", "text": json.dumps(output, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_social_sentiment":
-            research_mod = _lazy_import("research")
+            # 直接循环调用各社交引擎的 search()，聚合统计舆情
             platforms_str = arguments.get("platforms", "twitter,reddit,xiaohongshu")
             platforms = [p.strip() for p in platforms_str.split(",")]
-            result = research_mod.social_sentiment_research(
-                query=arguments["query"],
-                platforms=platforms,
-                max_results=arguments.get("max_results", 5),
-            )
-            return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]}
+            query = arguments["query"]
+            n = arguments.get("max_results", 5)
+            platform_results: dict = {}
+            all_posts: list = []
+            errors: list = []
+            for platform in platforms:
+                module_name = platform.replace("-", "_") + "_engine"
+                try:
+                    mod = importlib.import_module(f"social_engines.{module_name}")
+                    results = mod.search(query, n=n)
+                    platform_results[platform] = results
+                    all_posts.extend(results)
+                except ImportError:
+                    errors.append(f"Platform {platform} not available")
+                except Exception as e:
+                    errors.append(f"{platform}: {str(e)[:100]}")
+            # 聚合统计
+            engagement_totals = {"likes": 0, "comments": 0, "reposts": 0, "shares": 0}
+            for post in all_posts:
+                meta = post.get("social_meta", {})
+                engagement_totals["likes"] += meta.get("likes", 0) or meta.get("like_count", 0) or 0
+                engagement_totals["comments"] += meta.get("comments", 0) or 0
+                engagement_totals["reposts"] += meta.get("reposts", 0) or 0
+                engagement_totals["shares"] += meta.get("shares", 0) or 0
+            platform_breakdown = {p: len(r) for p, r in platform_results.items()}
+            output = {
+                "query": query,
+                "platforms": platforms,
+                "platform_breakdown": platform_breakdown,
+                "total_posts": len(all_posts),
+                "engagement_totals": engagement_totals,
+                "posts": all_posts,
+            }
+            if errors:
+                output["errors"] = errors
+            return {"content": [{"type": "text", "text": json.dumps(output, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_twitter_search":
             from social_engines.twitter_engine import search as twitter_search
@@ -493,6 +560,16 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             from social_engines.xiaohongshu_engine import search as xhs_search
             results = xhs_search(arguments["query"], arguments.get("max_results", 5))
             return {"content": [{"type": "text", "text": json.dumps({"results": results, "source": "xiaohongshu"}, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_bilibili_search":
+            from social_engines.bilibili_engine import search as bilibili_search
+            results = bilibili_search(arguments["query"], arguments.get("max_results", 5))
+            return {"content": [{"type": "text", "text": json.dumps({"results": results, "source": "bilibili"}, ensure_ascii=False, indent=2)}]}
+
+        elif name == "argo_weibo_search":
+            from social_engines.weibo_engine import search as weibo_search
+            results = weibo_search(arguments["query"], arguments.get("max_results", 5))
+            return {"content": [{"type": "text", "text": json.dumps({"results": results, "source": "weibo"}, ensure_ascii=False, indent=2)}]}
 
         elif name == "argo_evidence":
             results_json_str = arguments.get("results_json", "")
@@ -615,9 +692,9 @@ def handle_rpc(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {
                 "name": "argo",
-                "version": "1.0.1"
+                "version": "2.1.0"
             },
-            "instructions": "Argo MCP 提供 9 个工具：argo_search（47 引擎统一搜索）、argo_research（深度研究）、argo_evidence（可信度评估）、argo_clarify（意图消歧）、argo_crawl（站点爬取）、argo_extract（结构化数据提取）、argo_fetch（智能页面抓取+反检测浏览器降级）、argo_screenshot（页面截图）、argo_pdf（PDF 结构化提取）。底层使用 47 个搜索引擎的统一搜索基础设施，支持 TF-IDF 语义路由、RRF 多引擎融合、Bocha 语义精排、双层缓存和成本感知预算控制。新增 fetch 工具支持 HTTP→Patchright 浏览器自动降级、Cloudflare 绕过、BM25 聚焦提取、内容质量信号（content_ok/page_type/quality_score）。"
+            "instructions": "Argo MCP 提供 16 个工具：argo_search（47 引擎统一搜索）、argo_research（深度研究+社交舆情）、argo_evidence（可信度评估）、argo_clarify（意图消歧）、argo_crawl（站点爬取）、argo_extract（结构化数据提取）、argo_fetch（智能页面抓取+反检测浏览器降级）、argo_screenshot（页面截图）、argo_pdf（PDF 结构化提取）、argo_social_search（社交平台搜索）、argo_social_sentiment（社交舆情分析）、argo_twitter_search、argo_reddit_search、argo_xiaohongshu_search、argo_bilibili_search、argo_weibo_search。底层使用 47 个搜索引擎的统一搜索基础设施，支持 TF-IDF 语义路由、RRF 多引擎融合、Bocha 语义精排、双层缓存和成本感知预算控制。"
         }
 
     elif method == "tools/list":

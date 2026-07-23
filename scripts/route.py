@@ -37,6 +37,12 @@ try:
 except Exception:
     _adaptive_learner = None
 
+# 引擎注册中心（子引擎可见性）
+try:
+    from argo_engine_registry import get_registry as _get_registry
+except Exception:
+    _get_registry = None
+
 
 # ── 特征提取 ──────────────────────────────────────────────────────────────────
 
@@ -55,13 +61,17 @@ _RE_DEPTH = re.compile(
     r"(对比分析|深度|全面|详细|深入|系统|完整|综述|研究|探究|详解|论文)", re.I)
 
 _ENGINE_NAMES = {
-    "anysearch": "AnySearch", "wigolo": "Wigolo", "tavily": "Tavily",
+    "anysearch": "AnySearch", "tavily": "Tavily",
     "zhihu": "知乎", "eastmoney": "东方财富", "byted": "字节搜索",
     "arxiv": "arXiv", "searxng": "SearXNG", "felo": "Felo",
     "bocha": "博查", "openalex": "OpenAlex", "crossref": "Crossref",
     "github": "GitHub", "wikipedia": "Wikipedia", "metaso": "秘塔",
     "wolframalpha": "WolframAlpha", "brave": "Brave",
     "duckduckgo": "DuckDuckGo", "uapi": "UAPI", "semantic_scholar": "Semantic Scholar",
+    "exa": "Exa 语义搜索", "wechat_sogou": "搜狗微信搜索",
+    "hackernews": "Hacker News", "stackoverflow": "Stack Overflow",
+    "google_scholar": "Google Scholar", "v2ex": "V2EX",
+    "ths_hot": "同花顺热点", "cls_telegraph": "财联社电报", "em_global_news": "东财全球资讯",
 }
 
 
@@ -129,8 +139,82 @@ def match_domain(query: str, domains: list[dict[str, Any]] | None = None) -> dic
     return catch_all
 
 
-def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "auto") -> list[str]:
-    """从域配置获取 engines_combo，过滤不可用/付费（budget 模式）。"""
+def _expand_local_search(engine_list: list[str], features: dict | None = None) -> list[str]:
+    """将 local_search 扩展为具体的子引擎（基于查询特征）。"""
+    if "local_search" not in engine_list:
+        return engine_list
+    if _get_registry is None:
+        return engine_list
+
+    registry = _get_registry()
+    sub_engines = registry.list_local_engines(available_only=False)
+    if not sub_engines:
+        return engine_list
+
+    selected = _select_sub_engines(sub_engines, features)
+    result = [e for e in engine_list if e != "local_search"]
+    for eng in selected:
+        if eng not in result:
+            result.append(eng)
+    return result[:4]
+
+
+def _add_language_engines(engine_list: list[str], features: dict | None = None) -> list[str]:
+    """为已路由的查询添加语言相关的本地引擎（补充源）。
+
+    当 TF-IDF 已选中主引擎后，根据查询语言特征追加本地子引擎，
+    实现多源融合（网页引擎 + 本地零成本引擎）。
+    """
+    if _get_registry is None:
+        return engine_list
+    if not features:
+        return engine_list
+
+    chinese_ratio = features.get("chinese_ratio", 0)
+
+    # 已包含 local_ 引擎则跳过
+    if any(e.startswith("local_") for e in engine_list):
+        return engine_list
+
+    registry = _get_registry()
+    sub_engines = registry.list_local_engines(available_only=False)
+    if not sub_engines:
+        return engine_list
+
+    selected: list[str] = []
+    # 只要含中文字符就追加中文引擎（阈值 0.1 覆盖中英混合查询）
+    if chinese_ratio > 0.1:
+        selected = [e for e in ["local_baidu", "local_sogou", "local_bing"] if e in sub_engines]
+    elif features.get("has_depth_word"):
+        selected = [e for e in ["local_arxiv", "local_semantic_scholar"] if e in sub_engines]
+
+    result = list(engine_list)
+    for eng in selected[:2]:  # 最多追加 2 个
+        if eng not in result:
+            result.append(eng)
+    return result
+
+
+def _select_sub_engines(sub_engines: list[str], features: dict | None = None) -> list[str]:
+    """根据查询特征选择子引擎。"""
+    if not features:
+        return [e for e in ["local_bing", "local_duckduckgo", "local_mojeek"] if e in sub_engines]
+
+    chinese_ratio = features.get("chinese_ratio", 0)
+    if chinese_ratio > 0.1:
+        return [e for e in ["local_baidu", "local_sogou", "local_bing"] if e in sub_engines]
+    elif features.get("has_technical"):
+        return [e for e in ["local_github", "local_stackoverflow", "local_bing"] if e in sub_engines]
+    elif features.get("has_depth_word"):
+        return [e for e in ["local_arxiv", "local_semantic_scholar", "local_bing"] if e in sub_engines]
+    else:
+        return [e for e in ["local_bing", "local_duckduckgo", "local_mojeek"] if e in sub_engines]
+
+
+def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "auto",
+                       features: dict | None = None) -> list[str]:
+    """从域配置获取 engines_combo，过滤不可用/付费（budget 模式）。
+    自动将 local_search 扩展为子引擎（消灭黑盒）。"""
     combo = domain.get("engines_combo", [])
     if combo:
         filtered = [e for e in combo if e in enabled]
@@ -142,41 +226,55 @@ def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "a
             engines.append(fallback)
         filtered = [e for e in engines if e in enabled]
 
-    # budget/fast 模式过滤付费引擎
+    # 🔑 关键改动：将 local_search 扩展为子引擎
+    if "local_search" in filtered:
+        filtered = _expand_local_search(filtered, features)
+
+    # fast/budget 模式过滤付费引擎
     if mode in ("fast", "budget"):
         quota_mgr = get_quota_manager()
         filtered = [e for e in filtered if quota_mgr.is_available(e, mode=mode)]
 
-    # fast/budget 模式优先前置 local_search（零成本兜底）
-    if mode in ("fast", "budget") and "local_search" in enabled and "local_search" not in filtered:
-        filtered.insert(0, "local_search")
+    # fast/budget 模式优先前置零成本子引擎
+    if mode in ("fast", "budget"):
+        free_locals = [e for e in filtered if e.startswith("local_")]
+        others = [e for e in filtered if not e.startswith("local_")]
+        filtered = free_locals + others
 
-    # fast 模式：只保留免费/本地引擎，最多 2 个，确保速度和零成本
+    # fast 模式：只保留免费引擎，最多 2 个
     if mode == "fast":
         from config import get_cost_factor
         filtered = [e for e in filtered if get_cost_factor(e) >= 0.85]
-        if "local_search" in filtered:
-            filtered.remove("local_search")
-            filtered.insert(0, "local_search")
         filtered = filtered[:2]
 
-    # 自适应学习过滤：排除近期表现差的引擎（成功率 < 30% 或综合评分 < 0.3）
+    # 自适应学习过滤（保留主引擎不被过滤）
     if _adaptive_learner is not None and len(filtered) > 1:
         original = filtered[:]
-        filtered = [e for e in filtered if _adaptive_learner.get_score(e) >= 0.3]
+        primary = domain.get("primary")
+        filtered = [e for e in filtered if e == primary or _adaptive_learner.get_score(e) >= 0.3]
         if not filtered:
             filtered = original
-        elif len(filtered) < len(original) and "local_search" in enabled and "local_search" not in filtered:
-            filtered.append("local_search")
 
-    # 健康探针过滤：排除已知不可达的 HTTP 引擎
+    # 健康检查过滤
     try:
-        from health_probe import get_engine_status
-        healthy = [e for e in filtered if get_engine_status(e).get("available", True)]
+        from health_check import is_available as _hc_available
+        healthy = []
+        for e in filtered:
+            if e.startswith("local_"):
+                if _hc_available(e):
+                    healthy.append(e)
+            else:
+                healthy.append(e)
         if healthy:
             filtered = healthy
-    except Exception:
-        pass  # 健康探针模块不可用时跳过
+    except ImportError:
+        try:
+            from health_probe import get_engine_status
+            healthy = [e for e in filtered if get_engine_status(e).get("available", True)]
+            if healthy:
+                filtered = healthy
+        except ImportError:
+            pass
 
     return filtered
 
@@ -221,8 +319,11 @@ def route_query(query: str, engine_override: str = "auto",
         tfidf_scores = semantic_route(query, top_k=3)
         if tfidf_scores:
             tfidf_best = tfidf_scores[0][0]
-    except Exception:
-        pass
+    except ImportError:
+        pass  # tfidf_router 模块不可用
+    except Exception as e:
+        import logging
+        logging.getLogger("unified_search.route").debug(f"TF-IDF 路由跳过: {type(e).__name__}")
 
     # 预算模式过滤可用引擎
     quota_mgr = get_quota_manager()
@@ -233,12 +334,16 @@ def route_query(query: str, engine_override: str = "auto",
     domain = match_domain(query, get_domains(cfg))
 
     if domain:
-        engines_combo = _get_engines_combo(domain, enabled, mode)
+        engines_combo = _get_engines_combo(domain, enabled, mode, features)
+        # 🔑 为中文/学术查询追加本地引擎
+        engines_combo = _add_language_engines(engines_combo, features)
         if not engines_combo:
             # 域内引擎全被过滤，回退
             engines_combo = [e for e in ["local_search", "anysearch", "duckduckgo"] if e in enabled]
             if not engines_combo:
                 engines_combo = sorted(enabled)[:2] if enabled else ["anysearch"]
+            # 扩展 local_search → 子引擎
+            engines_combo = _expand_local_search(engines_combo, features)
 
         # TF-IDF 验证 + catch-all 修复
         tfidf_best_score = tfidf_scores[0][1] if tfidf_scores else 0.0
@@ -287,12 +392,16 @@ def route_query(query: str, engine_override: str = "auto",
         if "anysearch" in enabled and "anysearch" not in engines_combo:
             engines_combo.append("anysearch")
         engines_combo = [e for e in engines_combo if e in enabled]
+        # 🔑 展开 local_search → 子引擎
+        engines_combo = _expand_local_search(engines_combo, features)
+        # 🔑 为中文/学术查询追加本地引擎
+        engines_combo = _add_language_engines(engines_combo, features)
 
         return _done(
             engine=engines_combo[0],
             engines=engines_combo,
             engines_combo=engines_combo,
-            reason=f"TF-IDF 语义路由 → {_ENGINE_NAMES.get(tfidf_best, tfidf_best)} (正则未命中)",
+            reason=f"TF-IDF 语义路由 → {_ENGINE_NAMES.get(engines_combo[0], engines_combo[0])} (正则未命中)",
             confidence=0.85, features=features, domain=None,
             parallel=len(engines_combo) > 1,
             tfidf_scores=[{"engine": n, "score": s} for n, s, _ in tfidf_scores],
@@ -303,6 +412,7 @@ def route_query(query: str, engine_override: str = "auto",
     fallback_combo = [e for e in ["local_search", "anysearch", "duckduckgo"] if e in enabled]
     if not fallback_combo:
         fallback_combo = sorted(enabled)[:2] if enabled else ["anysearch"]
+    fallback_combo = _expand_local_search(fallback_combo, features)
 
     return _done(
         engine=fallback_combo[0],

@@ -9,9 +9,36 @@ import json
 import re
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+
+def _http_get_with_retry(url: str, headers: dict, timeout: int = 10, max_retries: int = 2):
+    """带重试的 HTTP GET，尊重 429 + Retry-After。
+
+    仅使用 stdlib，不引入第三方依赖。
+    返回 (body_bytes, status_code)。失败时抛出最后一次异常。
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read(), resp.status
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < max_retries:
+                retry_after = int(e.headers.get("Retry-After", "5"))
+                time.sleep(min(retry_after, 30))
+                continue
+            raise
+        except (urllib.error.URLError, OSError):
+            if attempt < max_retries:
+                time.sleep(2 ** attempt + 0.5)
+                continue
+            raise
+    return b"", 0
 
 
 def search_nitter(query: str, n: int = 5) -> list[dict]:
@@ -26,12 +53,12 @@ def search_nitter(query: str, n: int = 5) -> list[dict]:
     for base in nitter_instances:
         try:
             url = f"{base}/search?f=tweets&q={encoded_query}&since=2025-01-01"
-            req = urllib.request.Request(url, headers={
+            headers = {
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            })
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                html = resp.read().decode("utf-8", errors="replace")
-                return _parse_nitter_html(html, n)
+            }
+            body, _ = _http_get_with_retry(url, headers, timeout=8, max_retries=2)
+            html = body.decode("utf-8", errors="replace")
+            return _parse_nitter_html(html, n)
         except Exception:
             continue
     return []

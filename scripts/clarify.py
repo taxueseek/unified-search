@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-clarify.py — 意图消歧工具（wigolo query_understanding 理念移植）
+clarify.py — 意图消歧工具
 
 核心能力：
   1. 歧义检测：识别查询中的多义词

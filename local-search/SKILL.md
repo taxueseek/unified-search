@@ -9,7 +9,7 @@ triggers:
 
 ## Local Search v2.0.0 — T2 层本地搜索子技能
 
-unified-search 双层架构中的 **T2 本地引擎层**，28 个直接 HTTP 引擎，零外部依赖（无 SearXNG、无 wigolo、无 Node.js）。
+unified-search 双层架构中的 **T2 本地引擎层**，28 个直接 HTTP 引擎，零外部依赖（无 SearXNG、无 Node.js）。
 
 ### 与 unified-search 的调用关系
 

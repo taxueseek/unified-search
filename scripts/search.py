@@ -44,8 +44,11 @@ def _apply_query_rewrite(query: str) -> tuple[str, dict | None]:
         result = do_rewrite(query)
         if result["rewritten"] and result["confidence"] >= 0.7:
             return result["rewritten"], result
-    except Exception:
-        pass
+    except ImportError:
+        pass  # query_rewriter 模块不可用，使用原查询
+    except Exception as e:
+        import logging
+        logging.getLogger("unified_search").debug(f"查询改写跳过: {type(e).__name__}")
     return query, None
 
 
@@ -142,8 +145,8 @@ def rerank_results(query: str, results: list[dict[str, Any]],
             if scored:
                 scored.sort(key=lambda x: x.get("score", 0), reverse=True)
                 return scored[:top_n]
-    except Exception:
-        pass
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError):
+        pass  # Reranker 不可用时静默降级
     return results
 
 
@@ -170,8 +173,10 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
 
     # 缓存命中
     if not skip_cache:
-        hit = cache.get(query, cache_engine_key, max_results, domain=domain)
+        t_cache_start = time.time()
+        hit = cache.get(query, cache_engine_key, max_results, domain=domain, mode=mode)
         if hit:
+            cache_elapsed = int((time.time() - t_cache_start) * 1000)
             if on_progress:
                 on_progress(Stage.CACHE_HIT, {"cache_level": hit.get("_cache_level", "L?")})
             tfidf_scores = decision.get("tfidf_scores", [])
@@ -181,7 +186,7 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
                 "query": query, "engine": engine_label, "engines": engines,
                 "engines_combo": engines_combo, "cached": True,
                 "cache_level": hit.get("_cache_level", "L?"),
-                "domain": domain, "elapsed_ms": 0,
+                "domain": domain, "elapsed_ms": cache_elapsed,
                 "tfidf_scores": tfidf_scores,
                 "results": hit.get("results", []),
                 "count": len(hit.get("results", [])),
@@ -262,20 +267,45 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
         merged.sort(key=lambda r: abs(r.get("score", 0) or 0), reverse=True)
         merged = merged[:max_results]
 
-    # 内嵌可信度评分（快速版本：authority + freshness，不含 cross_validation）
+    # 内嵌两阶段信号（Selection×Absorption 快评；完整交叉验证走 argo evidence）
     if merged:
         try:
             from evidence import score_authority, score_freshness
+            from content_signals import score_evidence_density
             for r in merged:
                 url = r.get("url", "")
                 source = r.get("source", "")
+                title = r.get("title", "") or ""
+                snippet = r.get("snippet", "") or ""
                 auth = score_authority(url, source)
                 fresh = score_freshness(r)
+                dens = score_evidence_density(snippet, title)
+                selection = auth["score"]
+                if auth.get("is_serp"):
+                    selection = min(selection, 0.15)
+                absorption = dens["absorption_score"]
+                # 轻量 final，供 Agent 排序参考（权重与 evidence.py 一致）
+                orig = float(r.get("score", 0.5) or 0.5)
                 r["authority"] = auth["score"]
                 r["authority_tier"] = auth["tier"]
                 r["freshness"] = fresh["score"]
-        except Exception:
+                r["selection"] = round(selection, 3)
+                r["absorption"] = round(absorption, 3)
+                r["evidence_flags"] = {
+                    "has_numbers": dens["has_numbers"],
+                    "has_comparison": dens["has_comparison"],
+                    "has_definition": dens["has_definition"],
+                    "is_serp": bool(auth.get("is_serp")),
+                }
+                r["credibility_fast"] = round(
+                    selection * 0.40 + absorption * 0.35 + fresh["score"] * 0.15 + orig * 0.10,
+                    3,
+                )
+        except ImportError:
             pass  # evidence 模块不可用时跳过
+        except Exception as e:
+            import logging
+            logging.getLogger("unified_search").debug(f"可信度评分跳过: {type(e).__name__}")
 
     if on_progress:
         on_progress(Stage.MERGING, {"count": len(merged)})
@@ -292,7 +322,7 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
             base_ttl = cache.resolve_ttl(domain)
             effective_ttl = base_ttl * multiplier
         cache.set(query, cache_engine_key, max_results, result_payload,
-                  domain=domain, ttl=effective_ttl)
+                  domain=domain, ttl=effective_ttl, mode=mode)
 
     # 记录自适应学习数据
     try:
@@ -303,8 +333,11 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
             latency = elapsed / max(len(raw_results), 1)
             cost = get_cost_factor(eng)
             learner.record(eng, success=success, latency_ms=latency, cost=0.0 if cost >= 0.85 else 0.001)
-    except Exception:
-        pass
+    except ImportError:
+        pass  # adaptive 模块不可用
+    except Exception as e:
+        import logging
+        logging.getLogger("unified_search").debug(f"自适应学习记录跳过: {type(e).__name__}")
 
     if on_progress:
         on_progress(Stage.DONE, {"count": len(merged), "elapsed_ms": elapsed})

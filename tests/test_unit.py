@@ -61,8 +61,8 @@ class TestConfig(unittest.TestCase):
 
 class TestRoute(unittest.TestCase):
     def test_user_override(self):
-        d = route_query("anything", engine_override="wigolo")
-        self.assertEqual(d["engine"], "wigolo")
+        d = route_query("anything", engine_override="duckduckgo")
+        self.assertEqual(d["engine"], "duckduckgo")
         self.assertEqual(d["confidence"], 1.0)
 
     def test_stock_domain(self):
@@ -78,8 +78,16 @@ class TestRoute(unittest.TestCase):
 
     def test_technical_english(self):
         d = route_query("Python asyncio internals")
-        self.assertIn(d["engine"], ["anysearch", "byted", "wigolo"])
-        self.assertEqual(d["domain"], "general_search")
+        # TF-IDF 可将技术英文问句路由到代码/问答本地引擎，不再强制 general_search
+        tech_engines = {
+            "anysearch", "byted", "duckduckgo", "github",
+            "local_stackoverflow", "local_github", "local_bing",
+        }
+        self.assertTrue(
+            d["engine"] in tech_engines or any(e in tech_engines for e in d.get("engines", [])),
+            f"unexpected tech route: {d.get('engine')} / {d.get('engines')}",
+        )
+        self.assertIn(d.get("domain"), ("general_search", None, "tech_deep", "local_code"))
 
     def test_mode_budget_filters_paid(self):
         d = route_query("latest AI news", mode="budget")
@@ -143,9 +151,9 @@ class TestCache(unittest.TestCase):
         self.assertEqual(hit.get("_cache_level"), "L1")
 
     def test_l2_persist(self):
-        self.cache.set("q2", "wigolo", 3, {"results": [{"title": "y"}]}, domain="general")
+        self.cache.set("q2", "duckduckgo", 3, {"results": [{"title": "y"}]}, domain="general")
         cache2 = SearchCache(db_path=self.db_path)
-        hit = cache2.get("q2", "wigolo", 3, domain="general")
+        hit = cache2.get("q2", "duckduckgo", 3, domain="general")
         self.assertIsNotNone(hit)
         self.assertEqual(hit.get("_cache_level"), "L2")
 

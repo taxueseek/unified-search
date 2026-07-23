@@ -219,8 +219,8 @@ class TestEndToEnd(unittest.TestCase):
     def test_super_search_override_engine(self):
         """engine 参数应覆盖默认路由。"""
         from search import super_search
-        result = super_search("Python asyncio", engine="wigolo", n=2, skip_cache=True)
-        self.assertEqual(result["engine"], "wigolo")
+        result = super_search("Python asyncio", engine="duckduckgo", n=2, skip_cache=True)
+        self.assertEqual(result["engine"], "duckduckgo")
 
 
 # ── 主运行入口 ─────────────────────────────────────────────────────────────────

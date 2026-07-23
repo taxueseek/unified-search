@@ -56,10 +56,10 @@ html:
     score: 0.7
 
   local_baidu:
-    container: ".result, .c-container"
+    container: ".result, .c-container, .cosc-card-content-border"
     title: "h3"
     url: "a"
-    snippet: ".content-right_8Zs40, .c-abstract, .content-left_3d_H4"
+    snippet: ".c-abstract, .cosc-card-content-border, .cosc-card-content, .summary-text_15QGa, .text_2NOr6, .main-info_4Q_kj, .bk_polysemy_1Ef6j"
     url_attr: href
     score: 0.7
 

@@ -404,7 +404,7 @@ class TestScenarioRouting(unittest.TestCase):
     def test_fact_check_prefers_duckduckgo_in_combo(self) -> None:
         d = route_query("what is the capital of France")
         combo = d.get("engines_combo") or []
-        # fact_check 配置含 duckduckgo；wigolo 可能被插入首位
+        # fact_check 配置含 duckduckgo
         self.assertIn("duckduckgo", combo)
 
     def test_shopping_includes_uapi(self) -> None:
@@ -579,9 +579,9 @@ class TestKnownIssues(unittest.TestCase):
     """记录集成时发现的缺陷，便于跟踪。"""
 
     def test_http_post_parser_uses_engine_name_for_uapi(self) -> None:
-        """回归：HTTP POST 必须按 spec._name 选解析器，uapi source 不得被标成 wigolo。
+        """回归：HTTP POST 必须按 spec._name 选解析器，uapi source 不得被标成 stackoverflow。
 
-        历史缺陷：POST 分支曾固定 _parse_wigolo。现用 _PARSERS[name] + _ensure_engine_source。
+        历史缺陷：POST 分支曾固定 _parse_stackoverflow。现用 _PARSERS[name] + _ensure_engine_source。
         """
         r = _parse_uapi(
             {"results": [{"title": "t", "url": "https://u", "snippet": "s"}]}
@@ -590,7 +590,7 @@ class TestKnownIssues(unittest.TestCase):
         from engines import _ensure_engine_source
         # 模拟错标后纠正
         fixed = _ensure_engine_source(
-            [{"title": "t", "url": "https://u", "source": "wigolo"}], "uapi"
+            [{"title": "t", "url": "https://u", "source": "stackoverflow"}], "uapi"
         )
         self.assertEqual(fixed[0]["source"], "uapi")
 

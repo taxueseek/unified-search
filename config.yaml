@@ -5,6 +5,86 @@ cache:
   ttl: 3600
 
 domains:
+- desc: 微信公众号文章搜索
+  engines_combo:
+  - wechat_sogou
+  fallback: wechat_sogou
+  name: wechat_search
+  parallel: false
+  patterns:
+  - (?i)(公众号|微信文章|微信公众号|wechat.*article|mp\.weixin)
+  - (?i)(搜狗微信|微信搜索|搜公众号)
+  primary: wechat_sogou
+- desc: Hacker News 搜索
+  engines_combo:
+  - hackernews
+  fallback: hackernews
+  name: hackernews_search
+  parallel: false
+  patterns:
+  - (?i)(hacker.?news|hn|news\.ycombinator)
+  - (?i)(hackernews|hn\s+search)
+  primary: hackernews
+- desc: Stack Overflow 搜索
+  engines_combo:
+  - stackoverflow
+  fallback: stackoverflow
+  name: stackoverflow_search
+  parallel: false
+  patterns:
+  - (?i)(stack.?overflow|stackoverflow|编程问题|代码问题|技术问答)
+  - (?i)(python.*error|javascript.*error|java.*error|debug.*code|fix.*bug)
+  primary: stackoverflow
+- desc: 学术搜索（Google Scholar）
+  engines_combo:
+  - google_scholar
+  - arxiv
+  fallback: google_scholar
+  name: scholar_search
+  parallel: false
+  patterns:
+  - (?i)(google.?scholar|学术论文|论文搜索|research.*paper|journal.*article)
+  - (?i)(sci-hub|学术文献|学位论文|会议论文)
+  primary: google_scholar
+- desc: V2EX 社区搜索
+  engines_combo:
+  - v2ex
+  fallback: v2ex
+  name: v2ex_search
+  parallel: false
+  patterns:
+  - (?i)(v2ex|v2ex\.com)
+  - (?i)(技术社区|程序员社区|开发者论坛)
+  primary: v2ex
+- desc: 同花顺热点/强势股
+  engines_combo:
+  - ths_hot
+  fallback: ths_hot
+  name: ths_hot_search
+  parallel: false
+  patterns:
+  - (?i)(同花顺热点|强势股|涨停原因|题材归因|热点板块|今日强势)
+  - (?i)(hot stocks|trending stocks|market theme|momentum)
+  primary: ths_hot
+- desc: 财联社电报
+  engines_combo:
+  - cls_telegraph
+  fallback: cls_telegraph
+  name: cls_telegraph_search
+  parallel: false
+  patterns:
+  - (?i)(财联社|cls\.cn|电报|快讯|财经快讯)
+  primary: cls_telegraph
+- desc: 东财全球资讯
+  engines_combo:
+  - em_global_news
+  fallback: em_global_news
+  name: em_news_search
+  parallel: false
+  patterns:
+  - (?i)(东财资讯|全球资讯|7x24|财经快讯|市场快讯)
+  - (?i)(eastmoney news|global news|financial news)
+  primary: em_global_news
 - desc: 基金筛选/基金数据
   engines_combo:
   - eastmoney
@@ -75,12 +155,25 @@ domains:
   patterns:
   - (?i)(评测|推荐|哪个好|值得买|选购|入手|踩坑|避雷|best|review|comparison)
   primary: zhihu
+- desc: 语义发现/开放式调研（Exa 语义引擎）
+  engines_combo:
+  - exa
+  - anysearch
+  fallback: anysearch
+  name: semantic_discovery
+  parallel: false
+  patterns:
+  - (?i)(find me|discover|explore|landscape|ecosystem|what are the best|top.*tools|emerging|trending.*202[56])
+  - (?i)(有哪些值得关注|最新进展|行业格局|赛道分析|盘点一下|梳理一下)
+  primary: exa
+  cost_tier: api
 - desc: 技术深度研究
   engines_combo:
   - semantic_scholar
   - arxiv
   - openalex
   - github
+  - exa
   fallback: arxiv
   name: tech_deep
   parallel: true
@@ -126,6 +219,7 @@ domains:
   engines_combo:
   - bocha
   - byted
+  - wechat_sogou
   fallback: bocha
   name: chinese_general
   parallel: true
@@ -314,19 +408,43 @@ engines:
     timeout: 5
     type: http
     url: https://api.duckduckgo.com/
-  eastmoney:
-    cmd:
-    - python3
-    - ~/.agents/skills/eastmoney-financial-search/scripts/search.py
+  exa:
+    cost_tier: api
     enabled: true
-    env: {}
-    search_args:
-    - search-news
-    - --query
-    - '{query}'
-    - --count
-    - '{n}'
-    type: cli
+    timeout: 15
+    type: exa
+  eastmoney:
+    enabled: true
+    timeout: 12
+    type: eastmoney
+  v2ex:
+    enabled: true
+    timeout: 10
+    type: v2ex
+  google_scholar:
+    enabled: true
+    timeout: 12
+    type: google_scholar
+  hackernews:
+    enabled: true
+    timeout: 8
+    type: hackernews
+  stackoverflow:
+    enabled: true
+    timeout: 8
+    type: stackoverflow
+  ths_hot:
+    enabled: true
+    timeout: 10
+    type: ths_hot
+  cls_telegraph:
+    enabled: true
+    timeout: 10
+    type: cls_telegraph
+  em_global_news:
+    enabled: true
+    timeout: 10
+    type: em_global_news
   felo:
     body:
       query: '{query}'
@@ -420,18 +538,6 @@ engines:
     timeout: 8
     type: http
     url: https://uapis.cn/api/v1/search/aggregate
-  wigolo:
-    body:
-      include_content: false
-      max_results: '{n}'
-      query: '{query}'
-      search_depth: fast
-    enabled: true
-    headers:
-      Content-Type: application/json
-    timeout: 8
-    type: http
-    url: http://127.0.0.1:3333/v1/search
   wikipedia:
     enabled: true
     extra_params:
@@ -504,6 +610,320 @@ engines:
     - '-n'
     - '{n}'
     env: {}
+
+  # ── Local Search 子引擎（v2.1 上游化）──────────────────────────────────────
+  local_bing:
+    type: html
+    enabled: true
+    url: "https://www.bing.com/search"
+    query_param: q
+    extra_params:
+      setlang: zh-Hans
+    timeout: 8
+
+  local_google:
+    type: html
+    enabled: false
+    url: "https://www.google.com/search"
+    query_param: q
+    extra_params:
+      hl: zh-CN
+    timeout: 8
+
+  local_mojeek:
+    type: html
+    enabled: true
+    url: "https://www.mojeek.com/search"
+    query_param: q
+    timeout: 10
+
+  local_yandex:
+    type: html
+    enabled: false
+    url: "https://yandex.com/search/"
+    query_param: text
+    timeout: 10
+
+  local_startpage:
+    type: html
+    enabled: true
+    url: "https://www.startpage.com/do/dsearch"
+    query_param: query
+    timeout: 10
+
+  local_duckduckgo:
+    type: html
+    enabled: true
+    url: "https://html.duckduckgo.com/html/"
+    query_param: q
+    timeout: 8
+
+  local_baidu:
+    type: html
+    enabled: true
+    url: "https://www.baidu.com/s"
+    query_param: wd
+    extra_params:
+      ie: utf-8
+    timeout: 8
+
+  local_sogou:
+    type: html
+    enabled: true
+    url: "https://www.sogou.com/web"
+    query_param: query
+    timeout: 8
+
+  local_arxiv:
+    type: http
+    enabled: true
+    format: xml
+    method: GET
+    query_param: search_query
+    extra_params:
+      start: 0
+      max_results: "{n}"
+    timeout: 15
+    url: "http://export.arxiv.org/api/query"
+
+  local_pubmed:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: term
+    extra_params:
+      db: pubmed
+      retmode: json
+      retmax: "{n}"
+    output_map:
+      items: "esearchresult.idlist"
+      item_title: "pmid"
+      item_url: "pmid"
+      item_summary: "pmid"
+    timeout: 12
+    url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+
+  local_crossref:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: query
+    extra_params:
+      rows: "{n}"
+      mailto: unified-search@local
+    output_map:
+      items: "message.items"
+      item_title: "title"
+      item_url: "URL"
+      item_summary: "abstract"
+    timeout: 12
+    url: "https://api.crossref.org/works"
+
+  local_semantic_scholar:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: query
+    extra_params:
+      limit: "{n}"
+      fields: title,abstract,url
+    output_map:
+      items: "data"
+      item_title: "title"
+      item_url: "url"
+      item_summary: "abstract"
+    timeout: 12
+    url: "https://api.semanticscholar.org/graph/v1/paper/search"
+
+  local_bing_news:
+    type: http
+    enabled: true
+    format: xml
+    method: GET
+    query_param: q
+    extra_params:
+      format: rss
+    timeout: 8
+    url: "https://www.bing.com/news/search"
+
+  local_google_news:
+    type: http
+    enabled: true
+    format: xml
+    method: GET
+    query_param: q
+    timeout: 8
+    url: "https://news.google.com/rss/search"
+
+  local_github:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: q
+    extra_params:
+      per_page: "{n}"
+    headers:
+      Accept: application/vnd.github.v3+json
+      User-Agent: argo-search/2.1
+    output_map:
+      items: "items"
+      item_title: "full_name"
+      item_url: "html_url"
+      item_summary: "description"
+    timeout: 10
+    url: "https://api.github.com/search/repositories"
+
+  local_stackoverflow:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: q
+    extra_params:
+      site: stackoverflow
+      pagesize: "{n}"
+      order: desc
+      sort: relevance
+    output_map:
+      items: "items"
+      item_title: "title"
+      item_url: "link"
+      item_summary: "excerpt"
+    timeout: 10
+    url: "https://api.stackexchange.com/2.3/search/advanced"
+
+  local_gitlab:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: search
+    extra_params:
+      per_page: "{n}"
+      scope: projects
+    output_map:
+      items: "."
+      item_title: "name_with_namespace"
+      item_url: "web_url"
+      item_summary: "description"
+    timeout: 10
+    url: "https://gitlab.com/api/v4/search"
+
+  local_npm:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: text
+    extra_params:
+      size: "{n}"
+    output_map:
+      items: "objects"
+      item_title: "package.name"
+      item_url: "package.links.npm"
+      item_summary: "package.description"
+    timeout: 8
+    url: "https://registry.npmjs.org/-/v1/search"
+
+  local_wikipedia:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: srsearch
+    extra_params:
+      action: query
+      list: search
+      format: json
+      srlimit: "{n}"
+    output_map:
+      items: "query.search"
+      item_title: "title"
+      item_url: "title"
+      item_summary: "snippet"
+      url_template: "https://en.wikipedia.org/wiki/{title}"
+    timeout: 8
+    url: "https://en.wikipedia.org/w/api.php"
+
+  local_wiktionary:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: srsearch
+    extra_params:
+      action: query
+      list: search
+      format: json
+      srlimit: "{n}"
+    output_map:
+      items: "query.search"
+      item_title: "title"
+      item_url: "title"
+      item_summary: "snippet"
+      url_template: "https://en.wiktionary.org/wiki/{title}"
+    timeout: 8
+    url: "https://en.wiktionary.org/w/api.php"
+
+  local_wikiquote:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: srsearch
+    extra_params:
+      action: query
+      list: search
+      format: json
+      srlimit: "{n}"
+    output_map:
+      items: "query.search"
+      item_title: "title"
+      item_url: "title"
+      item_summary: "snippet"
+      url_template: "https://en.wikiquote.org/wiki/{title}"
+    timeout: 8
+    url: "https://en.wikiquote.org/w/api.php"
+
+  local_imdb:
+    type: html
+    enabled: false
+    url: "https://www.imdb.com/find/"
+    query_param: q
+    extra_params:
+      ref_: nv_sr_sm
+    timeout: 10
+
+  local_goodreads:
+    type: html
+    enabled: false
+    url: "https://www.goodreads.com/search"
+    query_param: q
+    extra_params:
+      search_type: books
+    timeout: 10
+
+  local_openstreetmap:
+    type: http
+    enabled: true
+    format: json
+    method: GET
+    query_param: q
+    extra_params:
+      format: json
+      limit: "{n}"
+    output_map:
+      items: "."
+      item_title: "display_name"
+      item_url: "osm_id"
+      item_summary: "type"
+      url_template: "https://www.openstreetmap.org/{osm_type}/{osm_id}"
+    timeout: 8
+    url: "https://nominatim.openstreetmap.org/search"
   xiaohongshu:
     type: cli
     enabled: true
@@ -574,7 +994,6 @@ cost_tiers:
     - zhihu
     - eastmoney
     - arxiv
-    - wigolo
     - duckduckgo
     - uapi
     - semantic_scholar
@@ -594,6 +1013,8 @@ cost_tiers:
     - metaso
     - byted
     - brave
+  api:
+    - exa
   paid:
     - tavily
     - felo

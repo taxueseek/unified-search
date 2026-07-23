@@ -2,7 +2,7 @@
 # =============================================================================
 # 合并 T1（直连 API）、T2（local-search 本地引擎）
 # 智能降级链：T1 API → T2 local-search → 缓存 → 报错
-# 无外部依赖：SearXNG/wigolo 已完全移除
+# 无外部依赖：SearXNG 已完全移除
 # =============================================================================
 # 状态说明:
 #   ok         — 可用，正常响应
@@ -161,6 +161,96 @@ engines:
     cost: api
     status: disabled
     desc: "Felo AI 搜索 API"
+
+  - name: exa
+    tier: T1
+    type: http
+    coverage: [semantic, general, english, chinese]
+    latency_ms: 6000
+    cost: api
+    status: ok
+    recommended: false
+    desc: "Exa 语义搜索（embedding 匹配 + 内容摘要，1000次/月免费）"
+
+  - name: wechat_sogou
+    tier: T1
+    type: http
+    coverage: [chinese, wechat, article]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "搜狗微信搜索（公众号文章搜索，无需登录）"
+
+  - name: hackernews
+    tier: T1
+    type: http
+    coverage: [tech, news, discussion, english]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "Hacker News（Algolia API，科技新闻+讨论）"
+
+  - name: stackoverflow
+    tier: T1
+    type: http
+    coverage: [code, programming, qa, english]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "Stack Overflow（Stack Exchange API，编程问答）"
+
+  - name: google_scholar
+    tier: T1
+    type: http
+    coverage: [academic, paper, research]
+    latency_ms: 3000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "Google Scholar（学术论文搜索，HTTP 页面解析）"
+
+  - name: v2ex
+    tier: T1
+    type: http
+    coverage: [chinese, tech, community, discussion]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: false
+    desc: "V2EX（中文技术社区搜索）"
+
+  - name: ths_hot
+    tier: T1
+    type: http
+    coverage: [chinese, stock, hot, theme]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "同花顺热点（当日强势股+题材归因，独家能力）"
+
+  - name: cls_telegraph
+    tier: T1
+    type: http
+    coverage: [chinese, news, telegraph, realtime]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "财联社电报（全市场实时快讯，v1 API+本地签名零key）"
+
+  - name: em_global_news
+    tier: T1
+    type: http
+    coverage: [chinese, news, global, finance]
+    latency_ms: 2000
+    cost: free
+    status: ok
+    recommended: true
+    desc: "东财全球资讯（7×24 财经快讯）"
 
   - name: uapi
     tier: T1
@@ -483,6 +573,18 @@ recommendations:
     t2_fallback: [local/sogou, local/bing]
     note: "local/sogou 替代 local/baidu（Baidu CAPTCHA 拦截 10.68s）"
     desc: "中文搜索推荐 Sogou 而非 Baidu"
+
+  semantic:
+    primary: [exa]
+    t2_fallback: [local/bing, local/duckduckgo]
+    note: "开放式发现、行业调研、工具推荐 — 用尽免费额度后降级到 anysearch"
+    desc: "语义发现：Exa embedding 搜索 + 内容摘要，1000次/月免费"
+
+  wechat:
+    primary: [wechat_sogou]
+    t2_fallback: [local/sogou]
+    note: "微信公众号文章搜索，搜狗微信搜索源"
+    desc: "微信公众号：搜狗微信搜索，覆盖已发布文章"
 
   academic:
     primary: [arxiv, semantic_scholar]
